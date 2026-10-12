@@ -1269,9 +1269,9 @@ function setMeetCode(i, el) {
   if (!m || !m.key) return;
   const code = el.value;
   const swims = (R.swims || []).filter(s => s.mkey === m.key || (s.date === m.date && s.meet === m.name));
-  const odd = swims.filter(s => s.code !== m.code).length;
-  if (odd && !confirm(`Set all ${swims.length} swims from ${m.name} to ${code}? ${odd} of them were changed individually and will be reset too.`)) {
-    el.value = m.code; return;
+  const mixed = new Set(swims.map(s => s.code)).size > 1;
+  if (mixed && !confirm(`Swims from ${m.name} currently have different codes. Set all ${swims.length} of them to ${code}?`)) {
+    renderMeetHistory(); return;
   }
   swims.forEach(s => { s.code = code; });
   m.code = code; R.meetCodes[m.key] = code;
@@ -1290,10 +1290,13 @@ function renderMeetHistory() {
   if (!meets.length) { document.getElementById('meetHistory').innerHTML = '<div style="color:var(--text-dim);font-size:.82rem">No meets imported yet.</div>'; return; }
   let h = '';
   meets.forEach((m, i) => {
-    const code = m.code || (m.key && R.meetCodes && R.meetCodes[m.key]) || '';
+    // Show what the swims actually carry; "Mixed" if they differ
+    const sc = [...new Set((R.swims || []).filter(s => s.mkey === m.key || (s.date === m.date && s.meet === m.name)).map(s => s.code))];
+    const code = sc.length === 1 ? sc[0] : sc.length > 1 ? 'Mixed' : (m.code || '');
     h += `<div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border)">
       <div><div style="font-size:.82rem;font-weight:600">${esc(m.name)}</div><div style="font-size:.7rem;color:var(--text-dim);font-family:var(--fm)">${m.date} · ${m.count} results</div></div>
       ${m.key ? `<select class="code-sel code-${code}" title="Rest code for every swim at this meet" onchange="setMeetCode(${i}, this)">${
+        (code === 'Mixed' ? '<option selected disabled>Mixed</option>' : '') +
         REST_CODES.map(c => `<option ${c===code?'selected':''}>${c}</option>`).join('')}</select>` : ''}
     </div>`;
   });
