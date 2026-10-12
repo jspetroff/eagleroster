@@ -1419,6 +1419,17 @@ function applyScraperImport(data) {
 
   const incoming = data.swimmers;
   let added = 0, updated = 0, timesUpdated = 0;
+  ensureState();
+  const existingCount = Object.keys(R.swimmers).length;
+  if (existingCount) {
+    const replace = confirm(`EagleRoster already has ${existingCount} athletes.\n\n` +
+      `OK = REPLACE: delete the current roster, all imported swims, meets and rest codes, and load only this file.\n` +
+      `Cancel = MERGE: keep everything and add/update from this file.`);
+    if (replace) {
+      if (!confirm(`Permanently delete ${existingCount} athletes and ${R.swims.length} swims? This can't be undone.`)) return;
+      R = { swimmers: {}, meets: [], swims: [], meetCodes: {}, aliases: {} };
+    }
+  }
 
   Object.values(incoming).forEach(s => {
     const existing = R.swimmers[s.id];
