@@ -254,7 +254,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
           <div style="font-size:.85rem;font-weight:600;margin-bottom:.35rem">Drop top-times PDFs here</div>
           <div style="font-size:.75rem;color:var(--text-dim)">.pdf · or click to choose</div>
         </div>
-        <input type="file" id="resultsFile" style="display:none" accept=".pdf" multiple onchange="handleResultsFiles(this.files);this.value=''">
+        <input type="file" id="resultsFile" style="display:none" accept=".pdf" multiple onchange="handleResultsFiles(this.files).finally(()=>{this.value=''})">
         <div id="parseStatus"></div>
         <div id="importPreview"></div>
       </div>
@@ -791,9 +791,9 @@ async function pdfReady() {
   window._pdfWorkerSet = true;
 }
 
-async function readPdfPages(file) {
+async function readPdfPages(bytes) {
   await pdfReady();
-  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
   const pages = [];
   for (let p = 1; p <= doc.numPages; p++) {
     const tc = await (await doc.getPage(p)).getTextContent();
@@ -909,12 +909,19 @@ async function handleResultsFiles(fileList) {
   ensureState();
   const files = [...(fileList || [])].filter(f => /\.pdf$/i.test(f.name));
   if (!files.length) { showParseStatus('Choose Team Manager top-times PDF files.', 'err'); return; }
+  // Grab every file's bytes right away, all at once: Chrome can revoke access to a picked file
+  // if it's read later (common with iCloud/OneDrive/network folders).
+  const loaded = await Promise.all(files.map(f => f.arrayBuffer()
+    .then(b => ({ f, bytes: new Uint8Array(b) }))
+    .catch(e => ({ f, err: e }))));
   showParseStatus(`Reading ${files.length} file${files.length>1?'s':''}...`, 'info');
   document.getElementById('importPreview').innerHTML = '';
   const fileInfo = [], rows = [];
-  for (const f of files) {
+  const unreadable = loaded.filter(x => x.err);
+  for (const { f, bytes, err } of loaded) {
+    if (err) { fileInfo.push({ name: f.name, err: 'Chrome could not read this file — copy it to your Desktop and drop it from there.' }); continue; }
     try {
-      const res = tmParseLines(tmItemsToLines(await readPdfPages(f)));
+      const res = tmParseLines(tmItemsToLines(await readPdfPages(bytes)));
       if (!res.kind) { fileInfo.push({ name: f.name, err: 'Not a Team Manager Individual Top Times report' }); continue; }
       fileInfo.push({ name: f.name, kind: res.kind, count: res.rows.length, warnings: res.warnings });
       res.rows.forEach(r => rows.push({ ...r, kind: res.kind }));
@@ -922,7 +929,12 @@ async function handleResultsFiles(fileList) {
       fileInfo.push({ name: f.name, err: e.message });
     }
   }
-  if (!rows.length) { showParseStatus('No times found in those files.', 'err'); renderImportPreview(fileInfo); return; }
+  if (!rows.length) {
+    showParseStatus(unreadable.length === files.length
+      ? 'Chrome could not open these files. This usually means they are in iCloud/OneDrive/Google Drive or a network folder, or were dragged from an email. Copy them to your Desktop, then drop them in from there.'
+      : 'No times found in those files.', 'err');
+    renderImportPreview(fileInfo); return;
+  }
 
   // Meets found
   const meets = {};
