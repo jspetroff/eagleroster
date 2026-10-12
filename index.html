@@ -237,7 +237,8 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div class="fpill" onclick="setRosterFilter('SR',this)">SR</div>
     <div class="fpill" onclick="setRosterFilter('GS',this)">GS</div>
   </div>
-  <div id="rosterSearch" style="margin-bottom:1rem"><input type="text" placeholder="Search by name or event..." oninput="renderRoster()" id="rosterQ" style="max-width:320px"></div>
+  <div id="rosterSearch" style="margin-bottom:1rem;display:flex;gap:1rem;align-items:center;flex-wrap:wrap"><input type="text" placeholder="Search by name or event..." oninput="renderRoster()" id="rosterQ" style="max-width:320px">
+    <label class="check-item" style="margin:0"><input type="checkbox" id="showAlumni" onchange="renderRoster()"> Show alumni &amp; archived</label></div>
   <div id="rosterList"></div>
 </div>
 
@@ -316,7 +317,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
           <div><label>Gender</label>
             <select id="repGender"><option value="all">All</option><option value="W">Women</option><option value="M">Men</option></select></div>
           <div><label>Year</label>
-            <select id="repYear"><option value="all">All Years</option><option>FR</option><option>SO</option><option>JR</option><option>SR</option></select></div>
+            <select id="repYear"><option value="all">All Years</option><option>FR</option><option>SO</option><option>JR</option><option>SR</option><option>GS</option></select></div>
         </div>
         <div><label>Events (leave blank for all)</label>
           <div class="check-grid" id="repEventPicker"></div></div>
@@ -389,16 +390,19 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
           <option value="M">Men</option>
           <option value="W">Women</option>
         </select></div>
-      <div><label>Year</label>
-        <select id="syear">
-          <option>FR</option><option>SO</option><option>JR</option><option>SR</option><option>GS</option>
-        </select></div>
+      <div><label>Grad Year</label>
+        <input id="sgrad" type="number" min="2000" max="2100" placeholder="2029" oninput="updateClassPreview()"></div>
       <div><label>Specialty</label>
         <select id="sspec">
           <option value="">— select —</option>
           <option>Freestyle</option><option>Backstroke</option><option>Breaststroke</option>
           <option>Butterfly</option><option>IM</option><option>Distance</option><option>Sprint</option><option>Diving</option>
         </select></div>
+    </div>
+    <div style="display:flex;gap:1.25rem;margin-bottom:.75rem;align-items:center">
+      <label class="check-item" style="margin:0"><input type="checkbox" id="sgs" onchange="updateClassPreview()"> Grad student (GS)</label>
+      <label class="check-item" style="margin:0"><input type="checkbox" id="sarch" onchange="updateClassPreview()"> Archived (left team)</label>
+      <span id="sclassPreview" style="font-size:.72rem;color:var(--text-dim);font-family:var(--fm)"></span>
     </div>
     <div class="frow">
       <div><label>SwimCloud Profile URL</label><input id="scloud" type="url" placeholder="https://www.swimcloud.com/swimmer/XXXXX/"></div>
@@ -450,7 +454,23 @@ const RELAY_LEGS = {
   '200 MR Relay': {strokes:['BK','BR','FL','FS'], dist:50},
   '400 MR Relay': {strokes:['BK','BR','FL','FS'], dist:100}
 };
-const YEAR_COLORS = {FR:'by1',SO:'by2',JR:'bm',SR:'bw'};
+const YEAR_COLORS = {FR:'by1',SO:'by2',JR:'bm',SR:'bw',GS:'bfr'};
+
+// ── CLASS FROM GRAD YEAR ──────────────────────────────────────────────────
+// Season runs Aug–Jul; the 2026–27 season "ends" in 2027, so its seniors are the Class of 2027.
+function seasonEndYear(d) { d = d || new Date(); return d.getMonth() >= 7 ? d.getFullYear() + 1 : d.getFullYear(); }
+function classOf(s) {
+  if (!s) return '';
+  if (s.archived) return 'ARCH';
+  const end = seasonEndYear();
+  if (s.gradYear && +s.gradYear < end) return 'ALUM';
+  if (s.gs) return 'GS';
+  if (!s.gradYear) return '';
+  const left = +s.gradYear - end;
+  return left <= 0 ? 'SR' : left === 1 ? 'JR' : left === 2 ? 'SO' : 'FR';
+}
+function isActive(s) { const c = classOf(s); return c !== 'ALUM' && c !== 'ARCH'; }
+function classBadge(s) { const c = classOf(s); return `<span class="badge ${YEAR_COLORS[c]||'bbk'}">${c||'—'}</span>`; }
 
 // ── STATE ──────────────────────────────────────────────────────────────────
 let R = { swimmers: {}, meets: [] }; // main roster state
@@ -507,9 +527,10 @@ function save() {
 }
 
 function updateMeta() {
-  const count = Object.keys(R.swimmers).length;
-  const w = Object.values(R.swimmers).filter(s=>s.gender==='W').length;
-  const m = Object.values(R.swimmers).filter(s=>s.gender==='M').length;
+  const act = Object.values(R.swimmers).filter(isActive);
+  const count = act.length;
+  const w = act.filter(s=>s.gender==='W').length;
+  const m = act.filter(s=>s.gender==='M').length;
   document.getElementById('rosterMeta').textContent = `${count} athletes · ${w}W ${m}M`;
 }
 
@@ -527,7 +548,7 @@ function switchTab(id, el) {
 // ── ROSTER RENDERING ──────────────────────────────────────────────────────
 function setRosterFilter(f, el) {
   _rosterFilter = f;
-  document.querySelectorAll('.fbar .fpill').forEach(p=>p.classList.remove('act'));
+  el.parentNode.querySelectorAll('.fpill').forEach(p=>p.classList.remove('act'));
   el.classList.add('act');
   renderRoster();
 }
@@ -535,9 +556,10 @@ function setRosterFilter(f, el) {
 function renderRoster() {
   const q = (document.getElementById('rosterQ').value||'').toLowerCase();
   let swimmers = Object.values(R.swimmers);
+  if (!document.getElementById('showAlumni').checked) swimmers = swimmers.filter(isActive);
   if (_rosterFilter !== 'all') {
     if (['M','W'].includes(_rosterFilter)) swimmers = swimmers.filter(s=>s.gender===_rosterFilter);
-    else swimmers = swimmers.filter(s=>s.year===_rosterFilter);
+    else swimmers = swimmers.filter(s=>classOf(s)===_rosterFilter);
   }
   if (q) swimmers = swimmers.filter(s =>
     (s.first+' '+s.last).toLowerCase().includes(q) ||
@@ -564,11 +586,11 @@ function renderRoster() {
       const txtColor = s.gender==='W'?'var(--purple)':'var(--blue)';
       const evCount = (s.events||[]).length;
       const sbt = getBestTime(s.id);
-      h += `<div class="scard" onclick="openDetail('${s.id}')">
+      h += `<div class="scard" onclick="openDetail('${s.id}')"${isActive(s)?'':' style="opacity:.55"'}>
         <div class="savatar" style="background:${bgColor};color:${txtColor}">${esc(initials)}</div>
         <div class="sinfo">
           <div class="sname">${esc(s.first)} ${esc(s.last)}</div>
-          <div class="smeta"><span class="badge ${YEAR_COLORS[s.year]||'bbk'}">${s.year}</span> ${evCount} event${evCount!==1?'s':''} · ${sbt}</div>
+          <div class="smeta">${classBadge(s)}${s.gradYear?` '${String(s.gradYear).slice(2)}`:''} ${evCount} event${evCount!==1?'s':''} · ${sbt}</div>
         </div>
         <button class="btn bsm" onclick="event.stopPropagation();openEditSwimmer('${s.id}')" style="flex-shrink:0">Edit</button>
       </div>`;
@@ -601,9 +623,12 @@ function openAddSwimmer() {
   document.getElementById('swimmerStatus').innerHTML = '';
   ['sfirst','slast','scloud'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('sgender').value = 'W';
-  document.getElementById('syear').value = 'FR';
+  document.getElementById('sgrad').value = seasonEndYear() + 3;
+  document.getElementById('sgs').checked = false;
+  document.getElementById('sarch').checked = false;
   document.getElementById('sspec').value = '';
   document.getElementById('eventPicker').innerHTML = buildEventPicker([]);
+  updateClassPreview();
   document.getElementById('swimmerModal').classList.add('open');
 }
 
@@ -617,11 +642,20 @@ function openEditSwimmer(id) {
   document.getElementById('sfirst').value = s.first||'';
   document.getElementById('slast').value = s.last||'';
   document.getElementById('sgender').value = s.gender||'W';
-  document.getElementById('syear').value = s.year||'FR';
+  document.getElementById('sgrad').value = s.gradYear || '';
+  document.getElementById('sgs').checked = !!s.gs;
+  document.getElementById('sarch').checked = !!s.archived;
   document.getElementById('sspec').value = s.specialty||'';
   document.getElementById('scloud').value = s.swimcloud||'';
   document.getElementById('eventPicker').innerHTML = buildEventPicker(s.events||[]);
+  updateClassPreview();
   document.getElementById('swimmerModal').classList.add('open');
+}
+
+function updateClassPreview() {
+  const c = classOf({ gradYear: parseInt(document.getElementById('sgrad').value, 10) || null,
+    gs: document.getElementById('sgs').checked, archived: document.getElementById('sarch').checked });
+  document.getElementById('sclassPreview').textContent = c ? 'Shows as ' + ({ALUM:'alumni',ARCH:'archived'}[c] || c) + ' this season' : '';
 }
 
 function closeSwimmerModal() { document.getElementById('swimmerModal').classList.remove('open'); }
@@ -640,7 +674,9 @@ function saveSwimmer() {
     ...existing,
     id, first, last,
     gender: document.getElementById('sgender').value,
-    year: document.getElementById('syear').value,
+    gradYear: parseInt(document.getElementById('sgrad').value, 10) || null,
+    gs: document.getElementById('sgs').checked,
+    archived: document.getElementById('sarch').checked,
     specialty: document.getElementById('sspec').value,
     swimcloud: document.getElementById('scloud').value.trim(),
     events,
@@ -675,7 +711,7 @@ function openDetail(id) {
   _currentDetailId = id;
   document.getElementById('detailName').textContent = s.first+' '+s.last;
   const scLink = s.swimcloud ? `<a href="${esc(s.swimcloud)}" target="_blank" style="color:var(--gold)">SwimCloud &#8599;</a>` : '';
-  document.getElementById('detailMeta').innerHTML = `<span class="badge ${YEAR_COLORS[s.year]||'bbk'}">${s.year}</span> ${s.gender==='W'?'Women':'Men'} · ${s.specialty||''} ${scLink}`;
+  document.getElementById('detailMeta').innerHTML = `${classBadge(s)}${s.gradYear?` Class of ${s.gradYear} ·`:''} ${s.gender==='W'?'Women':'Men'} · ${s.specialty||''} ${scLink}`;
 
   const times = s.times || {};
   if (!Object.keys(times).length) {
@@ -727,6 +763,14 @@ function ensureState() {
   R.swims = R.swims || [];
   R.meetCodes = R.meetCodes || {};
   R.aliases = R.aliases || {};
+  const end = seasonEndYear(), off = { SR: 0, JR: 1, SO: 2, FR: 3 };
+  let changed = false;
+  Object.values(R.swimmers).forEach(s => {
+    if (s.gradYear === undefined && s.year in off) { s.gradYear = end + off[s.year]; changed = true; }
+    if (s.year === 'GS' && !s.gs) { s.gs = true; changed = true; }
+    if (s.gradYear === undefined) { s.gradYear = null; }
+  });
+  return changed;
 }
 
 function handleFileDrop(e) {
@@ -1074,7 +1118,7 @@ function renderTopTimes() {
       const sw = R.swimmers[s.sid];
       h += `<tr>
         <td class="tt-rank">${rank}${tied?'*':''}</td>
-        <td><div style="font-weight:600;font-size:.8rem">${esc(sw.first)} ${esc(sw.last)} <span class="badge ${YEAR_COLORS[sw.year]||'bbk'}">${sw.year||'—'}</span></div>
+        <td><div style="font-weight:600;font-size:.8rem">${esc(sw.first)} ${esc(sw.last)} ${classBadge(sw)}</div>
             <div class="tt-meet">${esc(s.meet)} · ${s.date}</div></td>
         <td class="ttime" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.lo?'<span class="badge lo">LO</span>':''}</td>
         <td style="width:4.5rem;text-align:right"><select class="code-sel code-${s.code}" onchange="setSwimCode('${s.id}',this.value,this)">${
@@ -1089,7 +1133,7 @@ function renderTopTimes() {
 // ── MANUAL TIME ENTRY ─────────────────────────────────────────────────────
 function populateManualDropdowns() {
   const ss = document.getElementById('manSwimmer');
-  const swimmers = Object.values(R.swimmers).sort((a,b)=>(a.last+a.first).localeCompare(b.last+b.first));
+  const swimmers = Object.values(R.swimmers).filter(isActive).sort((a,b)=>(a.last+a.first).localeCompare(b.last+b.first));
   ss.innerHTML = '<option value="">— select —</option>' + swimmers.map(s=>`<option value="${s.id}">${esc(s.last)}, ${esc(s.first)}</option>`).join('');
   const se = document.getElementById('manEvent');
   se.innerHTML = '<option value="">— select —</option>' + EVENTS_IND.map(e=>`<option value="${esc(e)}">${esc(e)}</option>`).join('');
@@ -1175,9 +1219,9 @@ async function generateReport() {
   const vr = parseCuts(document.getElementById('varsityRecs').value);
 
   // Filter swimmers
-  let swimmers = Object.values(R.swimmers);
+  let swimmers = Object.values(R.swimmers).filter(isActive);
   if (gender !== 'all') swimmers = swimmers.filter(s=>s.gender===gender);
-  if (year !== 'all') swimmers = swimmers.filter(s=>s.year===year);
+  if (year !== 'all') swimmers = swimmers.filter(s=>classOf(s)===year);
   swimmers.sort((a,b)=>a.last.localeCompare(b.last));
 
   // Build rows grouped by event
@@ -1265,7 +1309,7 @@ function buildDayMap(events) {
 // ── RELAY BUILDER ─────────────────────────────────────────────────────────
 function renderRelays() {
   const gender = document.getElementById('relayGender').value;
-  const swimmers = Object.values(R.swimmers).filter(s=>s.gender===gender);
+  const swimmers = Object.values(R.swimmers).filter(s=>s.gender===gender && isActive(s));
   let h = '';
 
   const relays = ['200 FR Relay','400 FR Relay','800 FR Relay','200 MR Relay','400 MR Relay'];
@@ -1422,7 +1466,7 @@ function applyScraperImport(data) {
 
 // ── RENDER ALL ─────────────────────────────────────────────────────────────
 function renderAll() {
-  ensureState();
+  if (ensureState()) save();   // grad years filled in from old class labels
   renderRoster();
   renderMeetHistory();
   populateManualDropdowns();
