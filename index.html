@@ -47,6 +47,7 @@
 </script>
 <!-- PDF reading for Team Manager top-times reports -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root{
   --bg:#0f1117;--bg2:#171b24;--bg3:#1e2330;--border:#2a3045;
@@ -285,14 +286,14 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div class="cgrid">
     <div>
       <div class="card">
-        <div class="ct">Import Team Manager Top Times</div>
-        <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:1rem">Drop Team Manager <b>Individual Top Times</b> (by event or by name) and <b>Relay Legs Only</b> PDF reports — men's and women's, several at once is fine. Re-importing a report that overlaps an earlier one won't create duplicates.</p>
+        <div class="ct">Import Times</div>
+        <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:1rem">Drop <b>Meet Manager results</b> (the .zip or .hy3 the host sends) and/or Team Manager <b>Individual Top Times</b> (by event or by name) and <b>Relay Legs Only</b> PDFs. Several at once is fine. Re-importing a report that overlaps an earlier one won't create duplicates.</p>
         <div class="dropzone" id="dropzone" onclick="document.getElementById('resultsFile').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleFileDrop(event)">
           <div class="ico">&#128196;</div>
-          <div style="font-size:.85rem;font-weight:600;margin-bottom:.35rem">Drop top-times PDFs here</div>
-          <div style="font-size:.75rem;color:var(--text-dim)">.pdf · or click to choose</div>
+          <div style="font-size:.85rem;font-weight:600;margin-bottom:.35rem">Drop results or top-times files here</div>
+          <div style="font-size:.75rem;color:var(--text-dim)">.zip · .hy3 · .pdf · or click to choose</div>
         </div>
-        <input type="file" id="resultsFile" style="display:none" accept=".pdf" multiple onchange="handleResultsFiles(this.files).finally(()=>{this.value=''})">
+        <input type="file" id="resultsFile" style="display:none" accept=".pdf,.hy3,.zip" multiple onchange="handleResultsFiles(this.files).finally(()=>{this.value=''})">
         <div id="parseStatus"></div>
         <div id="importPreview"></div>
       </div>
@@ -956,6 +957,111 @@ function tmParseLines(lines) {
   return out;
 }
 
+// ── MEET MANAGER RESULTS (.hy3) PARSER ────────────────────────────────────
+// Returns { meet, date, rows:[{kind:'ind'|'split', gender, event, time, name, year, team, date, meet, leadoff}], warnings, teams }
+// Only swimmers on a team whose name matches teamRe are kept.
+const HY3_STROKE = { A: 'FS', B: 'BK', C: 'BR', D: 'FL', E: 'IM' };
+const MEDLEY_LEGS = ['BK', 'BR', 'FL', 'FS'];
+
+function hy3Fmt(sec) {
+  const m = Math.floor(sec / 60), s = (sec - m * 60).toFixed(2);
+  return m ? `${m}:${s.padStart(5, '0')}` : s;
+}
+function hy3Date(mmddyyyy) { return `${mmddyyyy.slice(4, 8)}-${mmddyyyy.slice(0, 2)}-${mmddyyyy.slice(2, 4)}`; }
+
+function parseHy3(text, teamRe) {
+  teamRe = teamRe || /emory/i;
+  const lines = text.replace(/\r/g, '').split('\n');
+  const out = { meet: '', date: '', rows: [], warnings: [], teams: [] };
+  const people = {};               // team|swimmerId -> {name, gender, year}
+  let team = null, keep = false, swimmer = null, ind = null, relay = null;
+
+  const pushInd = () => {
+    if (!ind || !ind.res) return;
+    const { res } = ind;
+    if (res.status === 'Q' || !(res.sec > 0)) return;   // DQ / no swim
+    out.rows.push({ kind: 'ind', gender: swimmer.gender, event: ind.event, time: hy3Fmt(res.sec), name: swimmer.name,
+      year: swimmer.year, team: team.name, date: res.date || out.date, meet: out.meet, leadoff: false });
+  };
+  const pushRelay = () => {
+    if (!relay || !relay.res || !relay.legs.length) return;
+    const r = relay;
+    if (r.res.status === 'Q') { out.warnings.push(`Skipped DQ'd relay: ${r.label}`); return; }
+    if (!(r.res.sec > 0)) return;
+    const legDist = r.dist / 4, unitsPerLeg = legDist / 25;
+    let prev = 0;
+    for (let leg = 1; leg <= 4; leg++) {
+      const p = r.legs.find(x => x.leg === leg);
+      let cum = leg === 4 ? r.res.sec : (r.splits[leg * unitsPerLeg] || 0);
+      if (!p) { prev = cum; continue; }
+      if (!(cum > 0) || (leg > 1 && !(prev > 0))) {
+        out.warnings.push(`No split for leg ${leg} of ${r.label}`);
+        prev = cum; continue;
+      }
+      const stroke = r.medley ? MEDLEY_LEGS[leg - 1] : 'FS';
+      const who = people[team.code + '|' + p.id];
+      if (who) out.rows.push({ kind: leg === 1 ? 'ind' : 'split', gender: who.gender, event: `${legDist} ${stroke}`,
+        time: hy3Fmt(cum - prev), name: who.name, year: who.year, team: team.name,
+        date: r.res.date || out.date, meet: out.meet, leadoff: leg === 1 });
+      prev = cum;
+    }
+  };
+  const flush = () => { pushInd(); ind = null; pushRelay(); relay = null; };
+
+  for (const L of lines) {
+    const rec = L.slice(0, 2);
+    if (rec === 'B1') {
+      out.meet = L.slice(2, 47).trim();
+      const d = L.slice(47).match(/(\d{8})/);
+      if (d) out.date = hy3Date(d[1]);
+    } else if (rec === 'C1') {
+      flush();
+      team = { code: L.slice(2, 7).trim(), name: L.slice(7, 37).trim() };
+      keep = teamRe.test(team.name) || teamRe.test(team.code);
+      out.teams.push(team.name);
+    } else if (!keep) {
+      continue;
+    } else if (rec === 'D1') {
+      flush();
+      const last = L.slice(8, 28).trim(), first = L.slice(28, 48).trim(), pref = L.slice(48, 68).trim();
+      const y = L.slice(68).match(/\s\d{1,2}(FR|SO|JR|SR|GR|GS|5Y)\b/);
+      swimmer = { id: L.slice(3, 8).trim(), gender: L[2] === 'M' ? 'M' : 'W', name: `${pref || first} ${last}`, year: y ? y[1] : '' };
+      people[team.code + '|' + swimmer.id] = swimmer;
+    } else if (rec === 'E1') {
+      flush();
+      const dist = parseInt(L.slice(15, 21), 10), st = HY3_STROKE[L[21]];
+      ind = st ? { event: `${dist} ${st}` } : null;
+      if (!st) out.warnings.push('Unknown stroke code: ' + L.slice(13, 22));
+    } else if (rec === 'E2' && ind) {
+      // a swimmer can have prelim + final results; keep the faster legal one
+      const r = { sec: parseFloat(L.slice(3, 11)), status: L[12], date: (L.match(/(\d{8})\s*\d*\s*\d*\s*$/) || [])[1] };
+      if (r.date) r.date = hy3Date(r.date);
+      if (!ind.res || (r.status !== 'Q' && r.sec > 0 && (ind.res.status === 'Q' || r.sec < ind.res.sec))) ind.res = r;
+    } else if (rec === 'F1') {
+      flush();
+      const dist = parseInt(L.slice(15, 21), 10), st = L[21];
+      relay = { dist, medley: st === 'E', legs: [], splits: {}, label: `${L[13] === 'M' ? 'Men' : 'Women'} ${dist} ${st === 'E' ? 'medley' : 'free'} relay ${L.slice(7, 8)}` };
+    } else if (rec === 'F2' && relay) {
+      const d = L.match(/(\d{8})\s*\d*\s*\d*\s*$/);
+      relay.res = { sec: parseFloat(L.slice(3, 11)), status: L[12], date: d ? hy3Date(d[1]) : '' };
+    } else if (rec === 'F3' && relay) {
+      for (let i = 2; i + 13 <= L.length + 1; i += 13) {
+        const chunk = L.slice(i, i + 13);
+        const id = chunk.slice(1, 6).trim(), leg = parseInt(chunk[12], 10);
+        if (id && leg >= 1 && leg <= 4) relay.legs.push({ id, leg });
+      }
+    } else if (rec === 'G1') {
+      const target = relay || ind;
+      if (!target) continue;
+      const re = /[A-Z]\s*(\d+)\s+([\d.]+)/g; let m;
+      const body = L.slice(2, 130);
+      while ((m = re.exec(body))) { const sec = parseFloat(m[2]); if (relay && sec > 0) relay.splits[+m[1]] = sec; }
+    }
+  }
+  flush();
+  return out;
+}
+
 // name matching: alias → exact first+last → unique last name (+gender) → last + first-initial
 function nmNorm(s){return (s||'').toLowerCase().replace(/[.'’]/g,'').replace(/[^a-z\s-]/g,' ').replace(/\s+/g,' ').trim();}
 function nmSplit(full){
@@ -981,8 +1087,8 @@ function nmMatch(name, gender, swimmers, aliases){
 
 async function handleResultsFiles(fileList) {
   ensureState();
-  const files = [...(fileList || [])].filter(f => /\.pdf$/i.test(f.name));
-  if (!files.length) { showParseStatus('Choose Team Manager top-times PDF files.', 'err'); return; }
+  const files = [...(fileList || [])].filter(f => /\.(pdf|hy3|zip)$/i.test(f.name));
+  if (!files.length) { showParseStatus('Choose Meet Manager results (.zip / .hy3) or Team Manager top-times PDFs.', 'err'); return; }
   // Grab every file's bytes right away, all at once: Chrome can revoke access to a picked file
   // if it's read later (common with iCloud/OneDrive/network folders).
   const loaded = await Promise.all(files.map(f => f.arrayBuffer()
@@ -995,6 +1101,25 @@ async function handleResultsFiles(fileList) {
   for (const { f, bytes, err } of loaded) {
     if (err) { fileInfo.push({ name: f.name, err: 'Chrome could not read this file — copy it to your Desktop and drop it from there.' }); continue; }
     try {
+      if (/\.(hy3|zip)$/i.test(f.name)) {
+        // Meet Manager results export — a .zip holds the .hy3 (and a .cl2 we don't need)
+        let texts = [];
+        if (/\.zip$/i.test(f.name)) {
+          if (!window.JSZip) throw new Error('Zip reader did not load — check your connection and reload.');
+          const zip = await JSZip.loadAsync(bytes);
+          const hy = Object.values(zip.files).filter(z => /\.hy3$/i.test(z.name));
+          if (!hy.length) { fileInfo.push({ name: f.name, err: 'No .hy3 results file inside this zip' }); continue; }
+          for (const z of hy) texts.push(await z.async('string'));
+        } else texts.push(new TextDecoder('latin1').decode(bytes));
+        for (const t of texts) {
+          const res = parseHy3(t);
+          if (!res.rows.length) { fileInfo.push({ name: f.name, err: 'No Emory swims found in these results' }); continue; }
+          const ni = res.rows.filter(r => r.kind === 'ind').length;
+          fileInfo.push({ name: f.name, label: `Meet results: ${res.meet} (${res.date}) · ${ni} individual + ${res.rows.length - ni} splits`, warnings: res.warnings });
+          res.rows.forEach(r => rows.push(r));
+        }
+        continue;
+      }
       const res = tmParseLines(tmItemsToLines(await readPdfPages(bytes)));
       if (!res.kind) { fileInfo.push({ name: f.name, err: 'Not a Team Manager Individual Top Times report' }); continue; }
       fileInfo.push({ name: f.name, kind: res.kind, count: res.rows.length, warnings: res.warnings });
@@ -1010,6 +1135,11 @@ async function handleResultsFiles(fileList) {
     renderImportPreview(fileInfo); return;
   }
 
+  // Same day = same meet: reuse the name already in EagleRoster (Meet Manager and Team Manager name meets differently)
+  rows.forEach(r => {
+    const ex = (R.meets || []).find(m => m.date === r.date);
+    if (ex && ex.name !== r.meet) r.meet = ex.name;
+  });
   // Meets found
   const meets = {};
   rows.forEach(r => {
@@ -1036,7 +1166,7 @@ function renderImportPreview(fileInfo) {
   let h = '<hr><div class="ct">Files</div>';
   fileInfo.forEach(f => {
     h += `<div class="imp-row"><span>${esc(f.name)}</span><span style="font-family:var(--fm);font-size:.72rem;color:${f.err?'var(--red)':'var(--text-dim)'}">${
-      f.err ? esc(f.err) : (f.kind === 'split' ? 'Relay splits' : 'Individual') + ' · ' + f.count + ' rows'}</span></div>`;
+      f.err ? esc(f.err) : f.label ? esc(f.label) : (f.kind === 'split' ? 'Relay splits' : 'Individual') + ' · ' + f.count + ' rows'}</span></div>`;
     (f.warnings || []).forEach(w => h += `<div class="st sterr" style="margin:.35rem 0">${esc(w)}</div>`);
   });
   if (!_imp) { box.innerHTML = h; return; }
@@ -1090,12 +1220,12 @@ function applyImport() {
     if (p.how !== 'exact') R.aliases[p.gender + '|' + nmNorm(p.name)] = idFor[p.key];
   });
 
-  const have = new Set(R.swims.map(s => [s.sid, s.kind, s.event, s.date, s.meet, s.time].join('|')));
+  const have = new Set(R.swims.map(s => [s.sid, s.kind, s.event, s.date, s.time].join('|')));
   let added = 0, dupes = 0, skipped = 0, newBests = 0;
   _imp.rows.forEach(r => {
     const sid = idFor[r.gender + '|' + r.name];
     if (!sid || !R.swimmers[sid]) { skipped++; return; }
-    const key = [sid, r.kind, r.event, r.date, r.meet, r.time].join('|');
+    const key = [sid, r.kind, r.event, r.date, r.time].join('|');
     if (have.has(key)) { dupes++; return; }
     have.add(key);
     const mkey = r.date + '|' + r.meet;
