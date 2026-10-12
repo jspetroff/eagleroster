@@ -173,6 +173,32 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .tt-meet{font-size:.72rem;color:var(--text-dim);}
 .imp-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.4rem 0;border-bottom:1px solid rgba(42,48,69,.4);font-size:.8rem;}
 .imp-row select{width:auto;max-width:230px;font-size:.75rem;padding:.25rem .4rem;}
+/* Print */
+.print-only,.code-print{display:none;}
+@media print {
+  @page { margin: .5in; }
+  :root{--bg:#fff;--bg2:#fff;--bg3:#fff;--border:#bbb;--text:#000;--text-dim:#333;--gold:#000;--green:#000;--blue:#000;--purple:#000;}
+  body{background:#fff;color:#000;font-size:10px;}
+  .hdr,.tabs,.fbar,.no-print,.sec-hdr,#ttHelp,#loginScreen,.modal{display:none!important;}
+  .print-only{display:block!important;}
+  .code-print{display:inline!important;font-family:var(--fm);font-weight:700;}
+  .content{padding:0;max-width:none;}
+  .tt-grid{display:block;column-count:2;column-gap:12px;}
+  .card{break-inside:avoid;border:1px solid #999;border-radius:4px;padding:5px 7px;margin:0 0 8px;}
+  .card+.card{margin-top:0;}
+  .ct{color:#000;margin-bottom:3px;font-weight:700;}
+  .tbl td{padding:1px 4px;border-bottom:1px solid #ddd;}
+  .tbl tr:hover td{background:none;}
+  .badge{background:none!important;color:#000!important;border:1px solid #888;}
+  .tt-meet{color:#444;font-size:8.5px;display:inline;margin-left:4px;}
+  .tbl td > div{display:inline;}
+  .tbl td{white-space:nowrap;line-height:1.25;}
+  .tbl td:nth-child(2){white-space:normal;}
+  .tbl td div[style]{font-size:10px!important;}
+  .badge{font-size:7.5px;padding:0 2px;}
+  .tt-rank{width:1.6rem;}
+  .ttime.pr,.ttime.sb{color:#000;}
+}
 /* Login */
 #loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;padding:2rem;}
 .login-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:2.5rem;text-align:center;max-width:360px;width:100%;}
@@ -358,6 +384,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <h3>Team Top Times</h3>
     <div style="display:flex;gap:.5rem;align-items:center">
       <select id="ttSeason" onchange="renderTopTimes()" style="width:auto"></select>
+      <button class="btn bsm" onclick="printTopTimes()">&#128424; Print</button>
     </div>
   </div>
   <div class="fbar" id="ttGenderBar">
@@ -372,7 +399,14 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div class="fpill act" data-v="ind" onclick="setTT('kind','ind',this)">Individual</div>
     <div class="fpill" data-v="split" onclick="setTT('kind','split',this)">Relay Splits</div>
   </div>
-  <div style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Best swim per athlete per event. Codes: U = unrested · UwS = unrested, suited · S = shaved. <span class="badge lo">LO</span> = relay lead-off.</div>
+  <div class="fbar" id="ttCodeBar">
+    <div class="fpill act" data-v="all" onclick="setTT('code','all',this)">All codes</div>
+    <div class="fpill" data-v="U" onclick="setTT('code','U',this)">U</div>
+    <div class="fpill" data-v="UwS" onclick="setTT('code','UwS',this)">UwS</div>
+    <div class="fpill" data-v="S" onclick="setTT('code','S',this)">S</div>
+  </div>
+  <div id="ttPrintHdr" class="print-only"></div>
+  <div id="ttHelp" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Best swim per athlete per event. Codes: U = unrested · UwS = unrested, suited · S = shaved. <span class="badge lo">LO</span> = relay lead-off.</div>
   <div class="tt-grid" id="ttList"></div>
 </div>
 
@@ -1105,7 +1139,7 @@ function renderMeetHistory() {
 }
 
 // ── TOP TIMES VIEW ────────────────────────────────────────────────────────
-let _tt = { gender: 'W', kind: 'ind', season: null, view: 'event' };
+let _tt = { gender: 'W', kind: 'ind', season: null, view: 'event', code: 'all' };
 
 function seasonOf(date) { const y = +date.slice(0,4), m = +date.slice(5,7); const s = m >= 8 ? y : y - 1; return `${s}-${String(s+1).slice(2)}`; }
 
@@ -1120,11 +1154,23 @@ function setSwimCode(id, code, el) {
   const s = (R.swims || []).find(x => x.id === id);
   if (!s) return;
   s.code = code;
-  el.className = 'code-sel code-' + code;
+  el.className = 'code-sel no-print code-' + code;
+  if (el.previousElementSibling) el.previousElementSibling.textContent = code;
   save();
+  if (_tt.code !== 'all') renderTopTimes();   // swim may no longer belong in the filtered list
 }
 
-const ttCodeSel = s => `<select class="code-sel code-${s.code}" onchange="setSwimCode('${s.id}',this.value,this)">${
+function printTopTimes() {
+  renderTopTimes();
+  const codeTxt = { all: 'All codes', U: 'U — unrested', UwS: 'UwS — unrested, suited', S: 'S — shaved' }[_tt.code];
+  document.getElementById('ttPrintHdr').innerHTML =
+    `<div style="font-size:16px;font-weight:700">Emory Swimming &amp; Diving — ${_tt.gender==='W'?'Women':'Men'}'s ${_tt.kind==='split'?'Relay Split':'Individual'} Top Times</div>
+     <div style="font-size:11px;margin:2px 0 10px">${_tt.season} season · ${_tt.view==='name'?'By name':'By event'} · ${codeTxt} · Printed ${new Date().toLocaleDateString()}
+     · Best swim per athlete per event · LO = relay lead-off · * = tie</div>`;
+  window.print();
+}
+
+const ttCodeSel = s => `<span class="code-print">${s.code}</span><select class="code-sel no-print code-${s.code}" onchange="setSwimCode('${s.id}',this.value,this)">${
   REST_CODES.map(c=>`<option ${c===s.code?'selected':''}>${c}</option>`).join('')}</select>`;
 const ttSort = ev => (a,b) => isDive(ev) ? parseFloat(b.time)-parseFloat(a.time) : timeToSec(a.time)-timeToSec(b.time);
 
@@ -1172,6 +1218,7 @@ function renderTopTimes() {
   _tt.season = sel.value;
 
   const pool = R.swims.filter(s => s.kind === _tt.kind && seasonOf(s.date) === _tt.season &&
+    (_tt.code === 'all' || s.code === _tt.code) &&
     R.swimmers[s.sid] && R.swimmers[s.sid].gender === _tt.gender);
   const byEvent = {};
   pool.forEach(s => {
@@ -1200,8 +1247,7 @@ function renderTopTimes() {
         <td><div style="font-weight:600;font-size:.8rem">${esc(sw.first)} ${esc(sw.last)} ${classBadge(sw)}</div>
             <div class="tt-meet">${esc(s.meet)} · ${s.date}</div></td>
         <td class="ttime" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.lo?'<span class="badge lo">LO</span>':''}</td>
-        <td style="width:4.5rem;text-align:right"><select class="code-sel code-${s.code}" onchange="setSwimCode('${s.id}',this.value,this)">${
-          REST_CODES.map(c=>`<option ${c===s.code?'selected':''}>${c}</option>`).join('')}</select></td>
+        <td style="width:4.5rem;text-align:right">${ttCodeSel(s)}</td>
       </tr>`;
     });
     h += '</tbody></table></div>';
