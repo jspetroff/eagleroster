@@ -238,7 +238,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div class="fpill" onclick="setRosterFilter('GS',this)">GS</div>
   </div>
   <div id="rosterSearch" style="margin-bottom:1rem;display:flex;gap:1rem;align-items:center;flex-wrap:wrap"><input type="text" placeholder="Search by name or event..." oninput="renderRoster()" id="rosterQ" style="max-width:320px">
-    <label class="check-item" style="margin:0"><input type="checkbox" id="showAlumni" onchange="renderRoster()"> Show alumni &amp; archived</label></div>
+    <label class="check-item" style="margin:0"><input type="checkbox" id="showAlumni" onchange="renderRoster()"> Show alumni, archived &amp; incoming</label></div>
   <div id="rosterList"></div>
 </div>
 
@@ -454,7 +454,7 @@ const RELAY_LEGS = {
   '200 MR Relay': {strokes:['BK','BR','FL','FS'], dist:50},
   '400 MR Relay': {strokes:['BK','BR','FL','FS'], dist:100}
 };
-const YEAR_COLORS = {FR:'by1',SO:'by2',JR:'bm',SR:'bw',GS:'bfr'};
+const YEAR_COLORS = {FR:'by1',SO:'by2',JR:'bm',SR:'bw',GS:'bfr',INC:'bfr'};
 
 // ── CLASS FROM GRAD YEAR ──────────────────────────────────────────────────
 // Season runs Aug–Jul; the 2026–27 season "ends" in 2027, so its seniors are the Class of 2027.
@@ -467,9 +467,10 @@ function classOf(s) {
   if (s.gs) return 'GS';
   if (!s.gradYear) return '';
   const left = +s.gradYear - end;
-  return left <= 0 ? 'SR' : left === 1 ? 'JR' : left === 2 ? 'SO' : 'FR';
+  return left <= 0 ? 'SR' : left === 1 ? 'JR' : left === 2 ? 'SO' : left === 3 ? 'FR' : 'INC';
 }
-function isActive(s) { const c = classOf(s); return c !== 'ALUM' && c !== 'ARCH'; }
+// Active = on this season's team: not graduated, not archived, not an incoming athlete who starts next year or later
+function isActive(s) { const c = classOf(s); return c !== 'ALUM' && c !== 'ARCH' && c !== 'INC'; }
 function classBadge(s) { const c = classOf(s); return `<span class="badge ${YEAR_COLORS[c]||'bbk'}">${c||'—'}</span>`; }
 
 // ── STATE ──────────────────────────────────────────────────────────────────
@@ -655,7 +656,7 @@ function openEditSwimmer(id) {
 function updateClassPreview() {
   const c = classOf({ gradYear: parseInt(document.getElementById('sgrad').value, 10) || null,
     gs: document.getElementById('sgs').checked, archived: document.getElementById('sarch').checked });
-  document.getElementById('sclassPreview').textContent = c ? 'Shows as ' + ({ALUM:'alumni',ARCH:'archived'}[c] || c) + ' this season' : '';
+  document.getElementById('sclassPreview').textContent = c ? 'Shows as ' + ({ALUM:'alumni',ARCH:'archived',INC:'incoming (not on this season\'s roster)'}[c] || c) + ' this season' : '';
 }
 
 function closeSwimmerModal() { document.getElementById('swimmerModal').classList.remove('open'); }
