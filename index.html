@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EagleRoster</title>
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  const cfg = {
+    apiKey:"AIzaSyALXznGsNQaeNOGmwG5EHOa0XONWy6EZfA",
+    authDomain:"swimscore-60e16.firebaseapp.com",
+    projectId:"swimscore-60e16",
+    storageBucket:"swimscore-60e16.firebasestorage.app",
+    messagingSenderId:"76892354791",
+    appId:"1:76892354791:web:3572467104e1be76980a42"
+  };
+  const app = initializeApp(cfg);
+  const db = getFirestore(app);
+  window._db=db; window._fsDoc=doc; window._fsSet=setDoc; window._fsGet=getDoc; window._fsSnap=onSnapshot; window._fsDel=deleteDoc; window._fbReady=true;
+  document.dispatchEvent(new Event('firebase-ready'));
+</script>
+<!-- PDF reading for Team Manager top-times reports -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{
+  --bg:#0f1117;--bg2:#171b24;--bg3:#1e2330;--border:#2a3045;
+  --gold:#c9a84c;--gold2:#e8c97a;--text:#e8ecf4;--text-dim:#6b7a99;
+  --green:#4caf7d;--red:#e05c5c;--blue:#5c9be0;--purple:#9b7fe8;
+  --fm:'SF Mono',Monaco,monospace;--fd:'Inter',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--fd);font-size:14px;min-height:100vh;}
+/* Header */
+.hdr{display:flex;align-items:center;gap:.75rem;padding:.75rem 1.5rem;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;}
+.logo{font-family:var(--fm);font-size:.82rem;letter-spacing:.15em;color:var(--gold);font-weight:700;}
+.logo span{color:var(--text-dim);}
+.sync-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0;}
+.sync-ok{background:var(--green);}
+.sync-err{background:var(--red);}
+.sync-wait{background:var(--gold);animation:pulse .8s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+.sync-bar{display:flex;align-items:center;gap:.35rem;font-size:.7rem;font-family:var(--fm);color:var(--text-dim);margin-left:auto;}
+/* Tabs */
+.tabs{display:flex;gap:.25rem;padding:.75rem 1.5rem .25rem;background:var(--bg2);border-bottom:1px solid var(--border);}
+.tab{font-family:var(--fm);font-size:.68rem;letter-spacing:.1em;padding:.5rem 1rem;border-radius:6px 6px 0 0;cursor:pointer;color:var(--text-dim);border:1px solid transparent;border-bottom:none;transition:all .15s;}
+.tab:hover{color:var(--text);}
+.tab.act{background:var(--bg);color:var(--gold);border-color:var(--border);}
+/* Content */
+.content{padding:1.5rem;max-width:1200px;margin:0 auto;}
+.tp{display:none;}.tp.act{display:block;}
+/* Cards */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem;}
+.card+.card{margin-top:1rem;}
+.ct{font-family:var(--fm);font-size:.65rem;letter-spacing:.15em;color:var(--text-dim);margin-bottom:1rem;text-transform:uppercase;}
+/* Buttons */
+.btn{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:.5rem 1rem;border-radius:6px;cursor:pointer;font-size:.78rem;font-family:var(--fd);transition:all .15s;}
+.btn:hover{border-color:var(--gold);color:var(--gold);}
+.bprimary{background:var(--gold);color:#0f1117;border-color:var(--gold);font-weight:600;}
+.bprimary:hover{background:var(--gold2);border-color:var(--gold2);color:#0f1117;}
+.bdanger{border-color:var(--red);color:var(--red);}
+.bdanger:hover{background:rgba(224,92,92,.1);}
+.bsm{padding:.3rem .65rem;font-size:.72rem;}
+/* Forms */
+input,select,textarea{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:.5rem .75rem;border-radius:6px;font-size:.82rem;font-family:var(--fd);width:100%;}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);}
+label{font-size:.75rem;color:var(--text-dim);display:block;margin-bottom:.3rem;}
+.frow{display:grid;gap:.75rem;margin-bottom:.75rem;}
+.f2{grid-template-columns:1fr 1fr;}
+.f3{grid-template-columns:1fr 1fr 1fr;}
+.f4{grid-template-columns:1fr 1fr 1fr 1fr;}
+/* Table */
+.tbl{width:100%;border-collapse:collapse;font-size:.82rem;}
+.tbl th{font-family:var(--fm);font-size:.62rem;letter-spacing:.1em;color:var(--text-dim);padding:.5rem .75rem;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;}
+.tbl td{padding:.5rem .75rem;border-bottom:1px solid rgba(42,48,69,.4);vertical-align:middle;}
+.tbl tr:last-child td{border-bottom:none;}
+.tbl tr:hover td{background:rgba(255,255,255,.02);}
+/* Badges */
+.badge{display:inline-block;font-size:.6rem;font-family:var(--fm);padding:.15rem .4rem;border-radius:3px;font-weight:700;letter-spacing:.06em;}
+.bm{background:rgba(92,155,224,.15);color:var(--blue);}
+.bw{background:rgba(155,127,232,.15);color:var(--purple);}
+.bfr{background:rgba(76,175,125,.1);color:var(--green);}
+.bbk{background:rgba(42,48,69,.5);color:var(--text-dim);}
+.by1{background:rgba(201,168,76,.1);color:var(--gold);}
+.by2{background:rgba(201,168,76,.08);color:var(--gold2);}
+/* Status */
+.st{font-size:.72rem;font-family:var(--fm);padding:.35rem .75rem;border-radius:5px;margin-bottom:.75rem;}
+.stok{background:rgba(76,175,125,.1);color:var(--green);border:1px solid rgba(76,175,125,.2);}
+.sterr{background:rgba(224,92,92,.1);color:var(--red);border:1px solid rgba(224,92,92,.2);}
+.stinfo{background:rgba(201,168,76,.1);color:var(--gold);border:1px solid rgba(201,168,76,.2);}
+/* Modal */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center;padding:1rem;}
+.modal.open{display:flex;}
+.modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.5rem;width:100%;max-width:560px;max-height:90vh;overflow-y:auto;}
+.modal-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;}
+.modal-hdr h2{font-size:1rem;font-weight:600;}
+.modal-close{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:1.2rem;padding:.25rem;}
+/* Grid layouts */
+.cgrid{display:grid;gap:1rem;grid-template-columns:1fr 1fr;}
+@media(max-width:700px){.cgrid{grid-template-columns:1fr;}.f2,.f3,.f4{grid-template-columns:1fr;}}
+/* Swimmer card */
+.scard{display:flex;align-items:center;gap:.75rem;padding:.75rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:.5rem;cursor:pointer;transition:border-color .15s;}
+.scard:hover{border-color:var(--gold);}
+.savatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--fm);font-size:.72rem;font-weight:700;flex-shrink:0;}
+.sinfo{flex:1;min-width:0;}
+.sname{font-weight:600;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.smeta{font-size:.7rem;color:var(--text-dim);font-family:var(--fm);}
+/* Event chip */
+.echip{display:inline-block;font-size:.65rem;font-family:var(--fm);padding:.15rem .4rem;border-radius:3px;background:var(--bg);border:1px solid var(--border);color:var(--text-dim);margin:.15rem;}
+/* Times table */
+.ttime{font-family:var(--fm);font-size:.78rem;}
+.ttime.pr{color:var(--gold);font-weight:700;}
+.ttime.sb{color:var(--green);}
+.ttime.lb{color:var(--text-dim);}
+/* Upload zone */
+.dropzone{border:2px dashed var(--border);border-radius:10px;padding:2.5rem;text-align:center;cursor:pointer;transition:all .2s;}
+.dropzone:hover,.dropzone.drag{border-color:var(--gold);background:rgba(201,168,76,.04);}
+.dropzone .ico{font-size:2rem;margin-bottom:.75rem;}
+/* Relay builder */
+.relay-lane{display:grid;grid-template-columns:32px 1fr auto auto;gap:.5rem;align-items:center;padding:.5rem .75rem;background:var(--bg3);border:1px solid var(--border);border-radius:6px;margin-bottom:.35rem;}
+.lane-num{font-family:var(--fm);font-size:.72rem;color:var(--text-dim);text-align:center;}
+/* Progress bar */
+.pbar{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-top:.35rem;}
+.pbar-fill{height:100%;border-radius:2px;transition:width .3s;}
+/* Checkbox grid */
+.check-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.5rem;margin:.75rem 0;}
+.check-item{display:flex;align-items:center;gap:.5rem;padding:.4rem .6rem;background:var(--bg3);border-radius:5px;cursor:pointer;font-size:.78rem;}
+.check-item input{width:auto;}
+/* Section header */
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;}
+.sec-hdr h3{font-size:.9rem;font-weight:600;}
+/* Filter bar */
+.fbar{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;}
+.fpill{font-size:.72rem;font-family:var(--fm);padding:.3rem .7rem;border-radius:20px;cursor:pointer;border:1px solid var(--border);color:var(--text-dim);background:var(--bg3);transition:all .15s;}
+.fpill.act{background:var(--gold);color:#0f1117;border-color:var(--gold);font-weight:700;}
+/* Divider */
+hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
+/* Rest codes */
+.code-sel{width:auto;padding:.15rem .3rem;font-size:.7rem;font-family:var(--fm);font-weight:700;}
+.code-U{color:var(--text-dim);}
+.code-UwS{color:var(--blue);}
+.code-S{color:var(--gold);}
+.badge.lo{background:rgba(92,155,224,.12);color:var(--blue);margin-left:.35rem;}
+/* Top times */
+.tt-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));}
+@media(max-width:700px){.tt-grid{grid-template-columns:1fr;}}
+.tt-rank{font-family:var(--fm);font-size:.72rem;color:var(--text-dim);width:2.2rem;}
+.tt-meet{font-size:.72rem;color:var(--text-dim);}
+.imp-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.4rem 0;border-bottom:1px solid rgba(42,48,69,.4);font-size:.8rem;}
+.imp-row select{width:auto;max-width:230px;font-size:.75rem;padding:.25rem .4rem;}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="logo">&#9652; EAGLE<span>ROSTER</span></div>
+  <div style="font-size:.72rem;color:var(--text-dim);font-family:var(--fm)" id="rosterMeta">Loading...</div>
+  <div class="sync-bar"><span class="sync-dot sync-wait" id="syncDot"></span><span id="syncMsg">Connecting...</span></div>
+</div>
+
+<div class="tabs">
+  <div class="tab act" onclick="switchTab('roster',this)">01 · Roster</div>
+  <div class="tab" onclick="switchTab('times',this)">02 · Times</div>
+  <div class="tab" onclick="switchTab('reports',this)">03 · Reports</div>
+  <div class="tab" onclick="switchTab('relays',this)">04 · Relays</div>
+  <div class="tab" onclick="switchTab('toptimes',this)">05 · Top Times</div>
+</div>
+
+<!-- ═══════════════════════════════════ TAB 1: ROSTER ═══════════════════════════════════ -->
+<div id="tab-roster" class="tp act content">
+  <div class="sec-hdr">
+    <h3>Team Roster</h3>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn bsm" onclick="importRosterCSV()">&#8679; Import from SwimCloud</button>
+      <button class="btn bsm bprimary" onclick="openAddSwimmer()">+ Add Swimmer</button>
+    </div>
+  </div>
+  <div class="fbar">
+    <div class="fpill act" onclick="setRosterFilter('all',this)">All</div>
+    <div class="fpill" onclick="setRosterFilter('W',this)">Women</div>
+    <div class="fpill" onclick="setRosterFilter('M',this)">Men</div>
+    <div class="fpill" onclick="setRosterFilter('FR',this)">FR</div>
+    <div class="fpill" onclick="setRosterFilter('SO',this)">SO</div>
+    <div class="fpill" onclick="setRosterFilter('JR',this)">JR</div>
+    <div class="fpill" onclick="setRosterFilter('SR',this)">SR</div>
+  </div>
+  <div id="rosterSearch" style="margin-bottom:1rem"><input type="text" placeholder="Search by name or event..." oninput="renderRoster()" id="rosterQ" style="max-width:320px"></div>
+  <div id="rosterList"></div>
+</div>
+
+<!-- ═══════════════════════════════════ TAB 2: TIMES ═══════════════════════════════════ -->
+<div id="tab-times" class="tp content">
+  <div class="cgrid">
+    <div>
+      <div class="card">
+        <div class="ct">Import Team Manager Top Times</div>
+        <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:1rem">Drop Team Manager <b>Individual Top Times</b> and <b>Relay Legs Only</b> PDF reports (men's and women's, several at once is fine). Re-importing a report that overlaps an earlier one won't create duplicates.</p>
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('resultsFile').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleFileDrop(event)">
+          <div class="ico">&#128196;</div>
+          <div style="font-size:.85rem;font-weight:600;margin-bottom:.35rem">Drop top-times PDFs here</div>
+          <div style="font-size:.75rem;color:var(--text-dim)">.pdf · or click to choose</div>
+        </div>
+        <input type="file" id="resultsFile" style="display:none" accept=".pdf" multiple onchange="handleResultsFiles(this.files);this.value=''">
+        <div id="parseStatus"></div>
+        <div id="importPreview"></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="ct">Meet History</div>
+        <div id="meetHistory"><div style="color:var(--text-dim);font-size:.82rem">No meets imported yet.</div></div>
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <div class="ct">Manual Time Entry</div>
+        <p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.75rem">Add or update a single time for any swimmer.</p>
+        <div class="frow f2">
+          <div><label>Swimmer</label>
+            <select id="manSwimmer"><option value="">— select —</option></select></div>
+          <div><label>Event</label>
+            <select id="manEvent"><option value="">— select —</option></select></div>
+        </div>
+        <div class="frow f3">
+          <div><label>Time</label><input type="text" id="manTime" placeholder="1:48.09"></div>
+          <div><label>Meet</label><input type="text" id="manMeet" placeholder="UAA Champs"></div>
+          <div><label>Date</label><input type="date" id="manDate"></div>
+        </div>
+        <button class="btn bprimary bsm" onclick="addManualTime()">Add Time</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ TAB 3: REPORTS ═══════════════════════════════════ -->
+<div id="tab-reports" class="tp content">
+  <div class="cgrid">
+    <div>
+      <div class="card">
+        <div class="ct">Report Type</div>
+        <div style="display:flex;flex-direction:column;gap:.5rem" id="reportTypeList">
+          <div class="scard" onclick="selectReport('ncaa_cheer',this)" data-rtype="ncaa_cheer">
+            <div class="savatar" style="background:rgba(201,168,76,.15);color:var(--gold)">&#9733;</div>
+            <div class="sinfo"><div class="sname">NCAA Cheer Sheet</div><div class="smeta">LTBT · SBT · A/B Final cuts · NCAA Rec · VR</div></div>
+          </div>
+          <div class="scard" onclick="selectReport('uaa_cheer',this)" data-rtype="uaa_cheer">
+            <div class="savatar" style="background:rgba(92,155,224,.15);color:var(--blue)">&#9632;</div>
+            <div class="sinfo"><div class="sname">UAA / Midseason Cheer Sheet</div><div class="smeta">LTBT · SBT · NCAA cuts · VR</div></div>
+          </div>
+          <div class="scard" onclick="selectReport('progress',this)" data-rtype="progress">
+            <div class="savatar" style="background:rgba(76,175,125,.15);color:var(--green)">&#8679;</div>
+            <div class="sinfo"><div class="sname">Season Progress</div><div class="smeta">SBT vs LBT · improvement · trend</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <div class="ct">Columns to Include</div>
+        <div id="colPicker" class="check-grid"></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="ct">Filter Swimmers</div>
+        <div class="frow f2">
+          <div><label>Gender</label>
+            <select id="repGender"><option value="all">All</option><option value="W">Women</option><option value="M">Men</option></select></div>
+          <div><label>Year</label>
+            <select id="repYear"><option value="all">All Years</option><option>FR</option><option>SO</option><option>JR</option><option>SR</option></select></div>
+        </div>
+        <div><label>Events (leave blank for all)</label>
+          <div class="check-grid" id="repEventPicker"></div></div>
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <div class="ct">Reference Data</div>
+        <p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.75rem">Paste cut lines or records to include in the report (one per line: <code style="font-family:var(--fm)">Event,Time</code>).</p>
+        <div class="frow">
+          <div><label>A Final cuts (prior year)</label><textarea id="aFinalCuts" rows="3" placeholder="500 FS,4:28.39&#10;200 IM,1:48.29"></textarea></div>
+          <div><label>B Final cuts (prior year)</label><textarea id="bFinalCuts" rows="3" placeholder="500 FS,4:29.27&#10;200 IM,1:49.49"></textarea></div>
+        </div>
+        <div><label>NCAA Records</label><textarea id="ncaaRecs" rows="3" placeholder="500 FS,4:18.35&#10;200 IM,1:42.97"></textarea></div>
+        <div style="margin-top:.75rem"><label>Varsity Records</label><textarea id="varsityRecs" rows="3" placeholder="500 FS,4:20.41&#10;200 IM,1:44.18"></textarea></div>
+      </div>
+      <button class="btn bprimary" style="width:100%;margin-top:1rem;padding:.75rem" onclick="generateReport()">&#8681; Generate &amp; Download Excel</button>
+      <div id="reportStatus" style="margin-top:.5rem"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ TAB 4: RELAYS ═══════════════════════════════════ -->
+<div id="tab-relays" class="tp content">
+  <div class="sec-hdr">
+    <h3>Relay Builder</h3>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <select id="relayGender" onchange="renderRelays()" style="width:auto">
+        <option value="W">Women</option>
+        <option value="M">Men</option>
+      </select>
+    </div>
+  </div>
+  <div class="cgrid" id="relayGrid"></div>
+</div>
+
+<!-- ═══════════════════════════════════ TAB 5: TOP TIMES ═══════════════════════════════════ -->
+<div id="tab-toptimes" class="tp content">
+  <div class="sec-hdr">
+    <h3>Team Top Times</h3>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <select id="ttSeason" onchange="renderTopTimes()" style="width:auto"></select>
+    </div>
+  </div>
+  <div class="fbar" id="ttGenderBar">
+    <div class="fpill act" data-v="W" onclick="setTT('gender','W',this)">Women</div>
+    <div class="fpill" data-v="M" onclick="setTT('gender','M',this)">Men</div>
+  </div>
+  <div class="fbar" id="ttKindBar">
+    <div class="fpill act" data-v="ind" onclick="setTT('kind','ind',this)">Individual</div>
+    <div class="fpill" data-v="split" onclick="setTT('kind','split',this)">Relay Splits</div>
+  </div>
+  <div style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Best swim per athlete per event. Codes: U = unrested · UwS = unrested, suited · S = shaved. <span class="badge lo">LO</span> = relay lead-off.</div>
+  <div class="tt-grid" id="ttList"></div>
+</div>
+
+<!-- ═══════ ADD/EDIT SWIMMER MODAL ═══════ -->
+<div class="modal" id="swimmerModal">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <h2 id="swimmerModalTitle">Add Swimmer</h2>
+      <button class="modal-close" onclick="closeSwimmerModal()">&#x2715;</button>
+    </div>
+    <div id="swimmerStatus"></div>
+    <div class="frow f2">
+      <div><label>First Name</label><input id="sfirst" type="text" placeholder="Ben"></div>
+      <div><label>Last Name</label><input id="slast" type="text" placeholder="Pritchard"></div>
+    </div>
+    <div class="frow f3">
+      <div><label>Gender</label>
+        <select id="sgender">
+          <option value="M">Men</option>
+          <option value="W">Women</option>
+        </select></div>
+      <div><label>Year</label>
+        <select id="syear">
+          <option>FR</option><option>SO</option><option>JR</option><option>SR</option>
+        </select></div>
+      <div><label>Specialty</label>
+        <select id="sspec">
+          <option value="">— select —</option>
+          <option>Freestyle</option><option>Backstroke</option><option>Breaststroke</option>
+          <option>Butterfly</option><option>IM</option><option>Distance</option><option>Sprint</option><option>Diving</option>
+        </select></div>
+    </div>
+    <div class="frow">
+      <div><label>SwimCloud Profile URL</label><input id="scloud" type="url" placeholder="https://www.swimcloud.com/swimmer/XXXXX/"></div>
+    </div>
+    <div><label>Primary Events</label>
+      <div class="check-grid" id="eventPicker"></div>
+    </div>
+    <hr>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn" onclick="closeSwimmerModal()">Cancel</button>
+      <button class="btn bdanger bsm" id="deleteSwimmerBtn" onclick="deleteCurrentSwimmer()" style="display:none">Delete</button>
+      <button class="btn bprimary" onclick="saveSwimmer()">Save Swimmer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ SWIMMER DETAIL MODAL ═══════ -->
+<div class="modal" id="detailModal">
+  <div class="modal-box" style="max-width:700px">
+    <div class="modal-hdr">
+      <div>
+        <h2 id="detailName"></h2>
+        <div id="detailMeta" style="font-size:.72rem;color:var(--text-dim);font-family:var(--fm);margin-top:.2rem"></div>
+      </div>
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <button class="btn bsm" onclick="editCurrentSwimmer()">Edit</button>
+        <button class="modal-close" onclick="closeDetailModal()">&#x2715;</button>
+      </div>
+    </div>
+    <div id="detailTimes"></div>
+  </div>
+</div>
+
+<script>
+// ── CONSTANTS ─────────────────────────────────────────────────────────────
+const EVENTS_IND = [
+  '50 FS','100 FS','200 FS','500 FS','1000 FS','1650 FS',
+  '100 BK','200 BK','100 BR','200 BR','100 FL','200 FL',
+  '200 IM','400 IM','Platform','3m Springboard','1m Springboard'
+];
+const EVENTS_RELAY = ['200 FR Relay','400 FR Relay','800 FR Relay','200 MR Relay','400 MR Relay'];
+const EVENTS_ALL = [...EVENTS_IND, ...EVENTS_RELAY];
+const RELAY_LEGS = {
+  '200 FR Relay': {stroke:'FS', dist:50},
+  '400 FR Relay': {stroke:'FS', dist:100},
+  '800 FR Relay': {stroke:'FS', dist:200},
+  '200 MR Relay': {strokes:['BK','BR','FL','FS'], dist:50},
+  '400 MR Relay': {strokes:['BK','BR','FL','FS'], dist:100}
+};
+const YEAR_COLORS = {FR:'by1',SO:'by2',JR:'bm',SR:'bw'};
+
+// ── STATE ──────────────────────────────────────────────────────────────────
+let R = { swimmers: {}, meets: [] }; // main roster state
+let _rosterFilter = 'all';
+let _currentSwimmerId = null;
+let _currentDetailId = null;
+let _currentReport = 'ncaa_cheer';
+let _fbAttempts = 0;
+
+// ── SYNC STATUS ────────────────────────────────────────────────────────────
+function setSync(state, msg) {
+  const dot = document.getElementById('syncDot');
+  const txt = document.getElementById('syncMsg');
+  dot.className = 'sync-dot ' + (state==='ok'?'sync-ok':state==='err'?'sync-err':'sync-wait');
+  txt.textContent = msg;
+}
+
+// ── FIREBASE ───────────────────────────────────────────────────────────────
+function rosterDoc() { return window._fsDoc(window._db, 'roster', 'main'); }
+
+async function cloudSave() {
+  if (!window._fbReady) return;
+  try {
+    await window._fsSet(rosterDoc(), { data: JSON.stringify(R) });
+    setSync('ok', 'Synced');
+  } catch(e) { setSync('err', 'Sync error'); }
+}
+
+function cloudListen() {
+  if (!window._fbReady) return;
+  window._fsSnap(rosterDoc(), snap => {
+    if (snap.exists()) {
+      try {
+        const loaded = JSON.parse(snap.data().data);
+        R = loaded;
+        renderAll();
+        setSync('ok', 'Live');
+      } catch(e) {}
+    }
+  }, () => setSync('err', 'Sync error'));
+}
+
+function tryConnect() {
+  if (window._fbReady) {
+    cloudListen();
+  } else if (_fbAttempts++ < 50) {
+    setTimeout(tryConnect, 200);
+  } else {
+    setSync('err', 'Offline');
+    renderAll();
+  }
+}
+
+// ── SAVE (local + cloud) ──────────────────────────────────────────────────
+function save() {
+  try { localStorage.setItem('eagleroster', JSON.stringify(R)); } catch(e) {}
+  cloudSave();
+  updateMeta();
+}
+
+function updateMeta() {
+  const count = Object.keys(R.swimmers).length;
+  const w = Object.values(R.swimmers).filter(s=>s.gender==='W').length;
+  const m = Object.values(R.swimmers).filter(s=>s.gender==='M').length;
+  document.getElementById('rosterMeta').textContent = `${count} athletes · ${w}W ${m}M`;
+}
+
+// ── TABS ──────────────────────────────────────────────────────────────────
+function switchTab(id, el) {
+  document.querySelectorAll('.tp').forEach(t=>t.classList.remove('act'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('act'));
+  document.getElementById('tab-'+id).classList.add('act');
+  el.classList.add('act');
+  if (id==='relays') renderRelays();
+  if (id==='reports') renderReportEvents();
+  if (id==='toptimes') renderTopTimes();
+}
+
+// ── ROSTER RENDERING ──────────────────────────────────────────────────────
+function setRosterFilter(f, el) {
+  _rosterFilter = f;
+  document.querySelectorAll('.fbar .fpill').forEach(p=>p.classList.remove('act'));
+  el.classList.add('act');
+  renderRoster();
+}
+
+function renderRoster() {
+  const q = (document.getElementById('rosterQ').value||'').toLowerCase();
+  let swimmers = Object.values(R.swimmers);
+  if (_rosterFilter !== 'all') {
+    if (['M','W'].includes(_rosterFilter)) swimmers = swimmers.filter(s=>s.gender===_rosterFilter);
+    else swimmers = swimmers.filter(s=>s.year===_rosterFilter);
+  }
+  if (q) swimmers = swimmers.filter(s =>
+    (s.first+' '+s.last).toLowerCase().includes(q) ||
+    (s.events||[]).some(e=>e.toLowerCase().includes(q))
+  );
+  swimmers.sort((a,b)=>(a.last+a.first).localeCompare(b.last+b.first));
+
+  if (!swimmers.length) {
+    document.getElementById('rosterList').innerHTML = '<div style="color:var(--text-dim);font-size:.82rem;padding:1rem 0">No swimmers match.</div>';
+    return;
+  }
+
+  // Group by gender
+  const groups = [['W','Women'],['M','Men']];
+  let h = '';
+  groups.forEach(([g, label]) => {
+    const gs = swimmers.filter(s=>s.gender===g);
+    if (!gs.length) return;
+    h += `<div style="font-family:var(--fm);font-size:.65rem;letter-spacing:.12em;color:var(--text-dim);margin:1rem 0 .5rem">${label.toUpperCase()} — ${gs.length}</div>`;
+    h += '<div style="display:grid;gap:.4rem;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">';
+    gs.forEach(s => {
+      const initials = (s.first[0]||'')+(s.last[0]||'');
+      const bgColor = s.gender==='W'?'rgba(155,127,232,.15)':'rgba(92,155,224,.15)';
+      const txtColor = s.gender==='W'?'var(--purple)':'var(--blue)';
+      const evCount = (s.events||[]).length;
+      const sbt = getBestTime(s.id);
+      h += `<div class="scard" onclick="openDetail('${s.id}')">
+        <div class="savatar" style="background:${bgColor};color:${txtColor}">${esc(initials)}</div>
+        <div class="sinfo">
+          <div class="sname">${esc(s.first)} ${esc(s.last)}</div>
+          <div class="smeta"><span class="badge ${YEAR_COLORS[s.year]||'bbk'}">${s.year}</span> ${evCount} event${evCount!==1?'s':''} · ${sbt}</div>
+        </div>
+        <button class="btn bsm" onclick="event.stopPropagation();openEditSwimmer('${s.id}')" style="flex-shrink:0">Edit</button>
+      </div>`;
+    });
+    h += '</div>';
+  });
+  document.getElementById('rosterList').innerHTML = h;
+}
+
+function getBestTime(id) {
+  const s = R.swimmers[id];
+  if (!s || !s.times) return '—';
+  const events = Object.keys(s.times);
+  if (!events.length) return 'No times';
+  return `${events.length} event${events.length!==1?'s':''} logged`;
+}
+
+// ── ADD / EDIT SWIMMER ────────────────────────────────────────────────────
+function buildEventPicker(selected) {
+  return EVENTS_IND.map(e => {
+    const chk = (selected||[]).includes(e) ? 'checked' : '';
+    return `<label class="check-item"><input type="checkbox" value="${esc(e)}" ${chk}> ${esc(e)}</label>`;
+  }).join('');
+}
+
+function openAddSwimmer() {
+  _currentSwimmerId = null;
+  document.getElementById('swimmerModalTitle').textContent = 'Add Swimmer';
+  document.getElementById('deleteSwimmerBtn').style.display = 'none';
+  document.getElementById('swimmerStatus').innerHTML = '';
+  ['sfirst','slast','scloud'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('sgender').value = 'W';
+  document.getElementById('syear').value = 'FR';
+  document.getElementById('sspec').value = '';
+  document.getElementById('eventPicker').innerHTML = buildEventPicker([]);
+  document.getElementById('swimmerModal').classList.add('open');
+}
+
+function openEditSwimmer(id) {
+  const s = R.swimmers[id];
+  if (!s) return;
+  _currentSwimmerId = id;
+  document.getElementById('swimmerModalTitle').textContent = 'Edit Swimmer';
+  document.getElementById('deleteSwimmerBtn').style.display = 'inline-block';
+  document.getElementById('swimmerStatus').innerHTML = '';
+  document.getElementById('sfirst').value = s.first||'';
+  document.getElementById('slast').value = s.last||'';
+  document.getElementById('sgender').value = s.gender||'W';
+  document.getElementById('syear').value = s.year||'FR';
+  document.getElementById('sspec').value = s.specialty||'';
+  document.getElementById('scloud').value = s.swimcloud||'';
+  document.getElementById('eventPicker').innerHTML = buildEventPicker(s.events||[]);
+  document.getElementById('swimmerModal').classList.add('open');
+}
+
+function closeSwimmerModal() { document.getElementById('swimmerModal').classList.remove('open'); }
+
+function saveSwimmer() {
+  const first = document.getElementById('sfirst').value.trim();
+  const last = document.getElementById('slast').value.trim();
+  if (!first || !last) {
+    document.getElementById('swimmerStatus').innerHTML = '<div class="st sterr">Name is required.</div>';
+    return;
+  }
+  const id = _currentSwimmerId || ('s_'+Date.now());
+  const events = [...document.querySelectorAll('#eventPicker input:checked')].map(i=>i.value);
+  const existing = R.swimmers[id] || {};
+  R.swimmers[id] = {
+    ...existing,
+    id, first, last,
+    gender: document.getElementById('sgender').value,
+    year: document.getElementById('syear').value,
+    specialty: document.getElementById('sspec').value,
+    swimcloud: document.getElementById('scloud').value.trim(),
+    events,
+    times: existing.times || {}
+  };
+  save();
+  closeSwimmerModal();
+  renderRoster();
+  populateManualDropdowns();
+}
+
+function deleteCurrentSwimmer() {
+  if (!_currentSwimmerId) return;
+  const s = R.swimmers[_currentSwimmerId];
+  if (!confirm(`Delete ${s.first} ${s.last}? This will remove all their times.`)) return;
+  delete R.swimmers[_currentSwimmerId];
+  save();
+  closeSwimmerModal();
+  renderRoster();
+  populateManualDropdowns();
+}
+
+function editCurrentSwimmer() {
+  closeDetailModal();
+  openEditSwimmer(_currentDetailId);
+}
+
+// ── SWIMMER DETAIL ────────────────────────────────────────────────────────
+function openDetail(id) {
+  const s = R.swimmers[id];
+  if (!s) return;
+  _currentDetailId = id;
+  document.getElementById('detailName').textContent = s.first+' '+s.last;
+  const scLink = s.swimcloud ? `<a href="${esc(s.swimcloud)}" target="_blank" style="color:var(--gold)">SwimCloud &#8599;</a>` : '';
+  document.getElementById('detailMeta').innerHTML = `<span class="badge ${YEAR_COLORS[s.year]||'bbk'}">${s.year}</span> ${s.gender==='W'?'Women':'Men'} · ${s.specialty||''} ${scLink}`;
+
+  const times = s.times || {};
+  if (!Object.keys(times).length) {
+    document.getElementById('detailTimes').innerHTML = '<div style="color:var(--text-dim);font-size:.82rem;padding:1rem 0">No times logged yet. Upload results or add manually.</div>';
+  } else {
+    let h = '<table class="tbl"><thead><tr><th>Event</th><th>SBT</th><th>LBT</th><th>Entries</th></tr></thead><tbody>';
+    Object.keys(times).sort().forEach(ev => {
+      const t = times[ev];
+      h += `<tr><td>${esc(ev)}</td>
+        <td class="ttime sb">${t.sbt||'—'}</td>
+        <td class="ttime lb">${t.lbt||'—'}</td>
+        <td style="font-size:.72rem;color:var(--text-dim)">${(t.history||[]).length} result${(t.history||[]).length!==1?'s':''}</td></tr>`;
+    });
+    h += '</tbody></table>';
+    // Meet history
+    h += '<div style="margin-top:1rem"><div class="ct">Result History</div>';
+    const allHistory = [];
+    Object.entries(times).forEach(([ev, t]) => {
+      (t.history||[]).forEach(r => allHistory.push({ev, ...r}));
+    });
+    allHistory.sort((a,b)=>new Date(b.date)-new Date(a.date));
+    if (allHistory.length) {
+      h += '<table class="tbl"><thead><tr><th>Date</th><th>Meet</th><th>Event</th><th>Time</th></tr></thead><tbody>';
+      allHistory.slice(0,20).forEach(r => {
+        h += `<tr><td style="font-size:.72rem;color:var(--text-dim)">${r.date||'—'}</td><td style="font-size:.78rem">${esc(r.meet||'—')}</td><td>${esc(r.ev)}</td><td class="ttime">${r.time}</td></tr>`;
+      });
+      h += '</tbody></table>';
+    }
+    h += '</div>';
+    document.getElementById('detailTimes').innerHTML = h;
+  }
+  document.getElementById('detailModal').classList.add('open');
+}
+
+function closeDetailModal() { document.getElementById('detailModal').classList.remove('open'); }
+
+// ── TIMES / RESULTS IMPORT (Team Manager top-times PDFs) ─────────────────
+const REST_CODES = ['U','UwS','S'];
+const DIVE_EVENTS = ['1m Springboard','3m Springboard','Platform'];
+const isDive = ev => DIVE_EVENTS.includes(ev);
+const TT_ORDER = ['50 FS','100 FS','200 FS','500 FS','1000 FS','1650 FS','50 BK','100 BK','200 BK',
+  '50 BR','100 BR','200 BR','50 FL','100 FL','200 FL','100 IM','200 IM','400 IM',
+  '1m Springboard','3m Springboard','Platform'];
+let _imp = null; // pending import (parsed, not yet applied)
+
+function ensureState() {
+  R.swimmers = R.swimmers || {};
+  R.meets = R.meets || [];
+  R.swims = R.swims || [];
+  R.meetCodes = R.meetCodes || {};
+  R.aliases = R.aliases || {};
+}
+
+function handleFileDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropzone').classList.remove('drag');
+  handleResultsFiles(e.dataTransfer.files);
+}
+
+async function pdfReady() {
+  if (!window.pdfjsLib) throw new Error('PDF reader did not load — check your internet connection and reload.');
+  if (window._pdfWorkerSet) return;
+  const src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  try {
+    const txt = await (await fetch(src)).text();
+    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([txt], {type:'text/javascript'}));
+  } catch (e) { pdfjsLib.GlobalWorkerOptions.workerSrc = src; }
+  window._pdfWorkerSet = true;
+}
+
+async function readPdfPages(file) {
+  await pdfReady();
+  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const pages = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const tc = await (await doc.getPage(p)).getTextContent();
+    pages.push(tc.items.map(i => ({ str: i.str, x: i.transform[4], y: i.transform[5] })));
+  }
+  return pages;
+}
+
+// ── TEAM MANAGER TOP-TIMES PDF PARSER (shared by app + test) ──────────────
+// Input: pages = [[{str,x,y}, ...], ...]  (pdf.js text items, y = baseline)
+// Output: { kind:'ind'|'split'|null, rows:[{gender,event,time,name,year,team,date,meet,leadoff}], warnings:[] }
+
+function tmItemsToLines(pages) {
+  const lines = [];
+  pages.forEach(items => {
+    const rows = [];
+    items.filter(it => it.str && it.str.trim()).forEach(it => {
+      let r = rows.find(r => Math.abs(r.y - it.y) < 2.5);
+      if (!r) { r = { y: it.y, items: [] }; rows.push(r); }
+      r.items.push(it);
+    });
+    rows.sort((a, b) => b.y - a.y);              // PDF y grows upward
+    rows.forEach(r => {
+      r.items.sort((a, b) => a.x - b.x);
+      lines.push(r.items.map(i => i.str.trim()).join(' ').replace(/\s+/g, ' ').trim());
+    });
+  });
+  return lines;
+}
+
+const TM_STROKE = { Free: 'FS', Back: 'BK', Breast: 'BR', Fly: 'FL', IM: 'IM' };
+
+function tmEventName(raw) {
+  let m = raw.match(/^(\d+)\s+(Free|Back|Breast|Fly|IM)$/);
+  if (m) return `${m[1]} ${TM_STROKE[m[2]]}`;
+  m = raw.match(/^(\d+)\s+Meter\b/i);
+  if (m) return m[1] === '1' ? '1m Springboard' : m[1] === '3' ? '3m Springboard' : 'Platform';
+  if (/platform/i.test(raw)) return 'Platform';
+  return null;
+}
+
+const TM_ROW = /^(\d+)\*?\s+([\d:.]+)\s+(?:([YLS])\s+)?(?:([A-Z])\s+)?([PFS])\s+(.+?)\s+(FR|SO|JR|SR|GR|GS|5Y|6Y|\d{1,2})\s+(.+?)\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+(.+)$/;
+
+function tmParseLines(lines) {
+  const out = { kind: null, rows: [], warnings: [] };
+  let gender = null, event = null, pending = null;
+
+  const finish = (text) => {
+    const m = text.match(TM_ROW);
+    if (!m) { out.warnings.push('Could not read: ' + text); return; }
+    if (!event) { out.warnings.push('Row outside an event: ' + text); return; }
+    const [mo, d, y] = m[9].split('/');
+    out.rows.push({
+      gender, event,
+      time: m[2],
+      leadoff: m[4] === 'L',
+      name: m[6].trim(),
+      year: /^(FR|SO|JR|SR|GR|GS|5Y|6Y)$/.test(m[7]) ? m[7] : '',
+      team: m[8].replace(/\s*-$/, '').trim(),
+      date: `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`,
+      meet: m[10].trim()
+    });
+  };
+
+  for (const line of lines) {
+    if (/Relay Legs Only/i.test(line)) { out.kind = 'split'; continue; }
+    if (/^Individual Top Times$/i.test(line)) { if (!out.kind) out.kind = 'ind'; continue; }
+    if (/^(Licensed To|Emory University Swimming|Times since|Number of Top Times|Time P\/F\/S)/i.test(line)) continue;
+    const h = line.match(/^(Men|Women)\s+\S+\s+(\d+\s+.+)$/);
+    if (h && !/\d{1,2}\/\d{1,2}\/\d{4}/.test(line)) {
+      if (pending) { finish(pending); pending = null; }
+      gender = h[1] === 'Men' ? 'M' : 'W';
+      event = tmEventName(h[2].trim());
+      if (!event) out.warnings.push('Unknown event skipped: ' + h[2]);
+      continue;
+    }
+    if (/^\d+\*?\s+[\d:.]+\s/.test(line)) {
+      if (pending) { finish(pending); pending = null; }
+      if (/\d{1,2}\/\d{1,2}\/\d{4}/.test(line)) finish(line); else pending = line;
+      continue;
+    }
+    if (pending) { finish(pending + ' ' + line); pending = null; }
+  }
+  if (pending) finish(pending);
+  out.rows = out.rows.filter(r => r.event);
+  return out;
+}
+
+// name matching: alias → exact first+last → unique last name (+gender) → last + first-initial
+function nmNorm(s){return (s||'').toLowerCase().replace(/[.'’]/g,'').replace(/[^a-z\s-]/g,' ').replace(/\s+/g,' ').trim();}
+function nmSplit(full){
+  let t=nmNorm(full).split(' ').filter(Boolean);
+  while(t.length>2 && /^(jr|sr|ii|iii|iv)$/.test(t[t.length-1])) t.pop();
+  const first=t[0]||'', rest=t.slice(1).filter(x=>x.length>1);
+  return {first, last: rest.join(' ') || (t[1]||''), lastTok: rest.length?rest[rest.length-1]:(t[1]||''), toks: rest};
+}
+function nmMatch(name, gender, swimmers, aliases){
+  const ak=gender+'|'+nmNorm(name);
+  if(aliases&&aliases[ak]&&swimmers.some(s=>s.id===aliases[ak])) return {id:aliases[ak],how:'alias'};
+  const n=nmSplit(name);
+  const pool=swimmers.filter(s=>s.gender===gender);
+  const lastOf=s=>nmSplit('x '+s.last).last, firstOf=s=>nmNorm(s.first).split(' ')[0];
+  let c=pool.filter(s=>firstOf(s)===n.first && (lastOf(s)===n.last||lastOf(s)===n.lastTok));
+  if(c.length===1) return {id:c[0].id,how:'exact'};
+  c=pool.filter(s=>lastOf(s)===n.last||lastOf(s)===n.lastTok);
+  if(c.length===1) return {id:c[0].id,how:'last'};
+  if(!c.length){ c=pool.filter(s=>n.toks.includes(lastOf(s))); if(c.length===1) return {id:c[0].id,how:'last'}; }
+  if(c.length>1){ const d=c.filter(s=>firstOf(s)[0]===n.first[0]); if(d.length===1) return {id:d[0].id,how:'initial'}; }
+  return {id:null,how:'none',candidates:c.map(s=>s.id)};
+}
+
+async function handleResultsFiles(fileList) {
+  ensureState();
+  const files = [...(fileList || [])].filter(f => /\.pdf$/i.test(f.name));
+  if (!files.length) { showParseStatus('Choose Team Manager top-times PDF files.', 'err'); return; }
+  showParseStatus(`Reading ${files.length} file${files.length>1?'s':''}...`, 'info');
+  document.getElementById('importPreview').innerHTML = '';
+  const fileInfo = [], rows = [];
+  for (const f of files) {
+    try {
+      const res = tmParseLines(tmItemsToLines(await readPdfPages(f)));
+      if (!res.kind) { fileInfo.push({ name: f.name, err: 'Not a Team Manager Individual Top Times report' }); continue; }
+      fileInfo.push({ name: f.name, kind: res.kind, count: res.rows.length, warnings: res.warnings });
+      res.rows.forEach(r => rows.push({ ...r, kind: res.kind }));
+    } catch (e) {
+      fileInfo.push({ name: f.name, err: e.message });
+    }
+  }
+  if (!rows.length) { showParseStatus('No times found in those files.', 'err'); renderImportPreview(fileInfo); return; }
+
+  // Meets found
+  const meets = {};
+  rows.forEach(r => {
+    const k = r.date + '|' + r.meet;
+    meets[k] = meets[k] || { key: k, name: r.meet, date: r.date, n: 0, code: R.meetCodes[k] || 'U' };
+    meets[k].n++;
+  });
+
+  // Names → roster
+  const swimmers = Object.values(R.swimmers);
+  const people = {};
+  rows.forEach(r => {
+    const k = r.gender + '|' + r.name;
+    if (!people[k]) people[k] = { key: k, name: r.name, gender: r.gender, year: r.year, ...nmMatch(r.name, r.gender, swimmers, R.aliases) };
+  });
+
+  _imp = { rows, meets, people, fileInfo };
+  showParseStatus('', '');
+  renderImportPreview(fileInfo);
+}
+
+function renderImportPreview(fileInfo) {
+  const box = document.getElementById('importPreview');
+  let h = '<hr><div class="ct">Files</div>';
+  fileInfo.forEach(f => {
+    h += `<div class="imp-row"><span>${esc(f.name)}</span><span style="font-family:var(--fm);font-size:.72rem;color:${f.err?'var(--red)':'var(--text-dim)'}">${
+      f.err ? esc(f.err) : (f.kind === 'split' ? 'Relay splits' : 'Individual') + ' · ' + f.count + ' rows'}</span></div>`;
+    (f.warnings || []).forEach(w => h += `<div class="st sterr" style="margin:.35rem 0">${esc(w)}</div>`);
+  });
+  if (!_imp) { box.innerHTML = h; return; }
+
+  h += '<div class="ct" style="margin-top:1.25rem">Meets — rest code</div>';
+  _imp.meetList = Object.values(_imp.meets).sort((a,b)=>a.date.localeCompare(b.date));
+  _imp.meetList.forEach((m, mi) => {
+    h += `<div class="imp-row"><div><div style="font-weight:600">${esc(m.name)}</div><div class="tt-meet">${m.date} · ${m.n} swims</div></div>
+      <select class="code-sel code-${m.code}" onchange="_imp.meetList[${mi}].code=this.value;this.className='code-sel code-'+this.value">${
+        REST_CODES.map(c=>`<option ${c===m.code?'selected':''}>${c}</option>`).join('')}</select></div>`;
+  });
+
+  const ppl = Object.values(_imp.people);
+  const review = _imp.review = ppl.filter(p => p.how !== 'exact' && p.how !== 'alias');
+  const roster = Object.values(R.swimmers).sort((a,b)=>(a.last+a.first).localeCompare(b.last+b.first));
+  if (review.length) {
+    h += `<div class="ct" style="margin-top:1.25rem">Check names (${review.length})</div>
+      <p style="font-size:.75rem;color:var(--text-dim);margin-bottom:.5rem">${ppl.length - review.length} names matched exactly. These ones need a look — your choices are remembered for next time.</p>`;
+    review.forEach((p, pi) => {
+      const opts = roster.filter(s => s.gender === p.gender).map(s =>
+        `<option value="${esc(s.id)}" ${s.id===p.id?'selected':''}>${esc(s.first)} ${esc(s.last)}</option>`).join('');
+      h += `<div class="imp-row"><div><div style="font-weight:600">${esc(p.name)}</div><div class="tt-meet">${p.gender==='W'?'Women':'Men'} · ${p.year||'—'}${p.how==='none'?' · not on roster':''}</div></div>
+        <select onchange="_imp.review[${pi}].choice=this.value">
+          <option value="__skip" ${p.id?'':'selected'}>— skip —</option>
+          <option value="__new">+ Add as new swimmer</option>${opts}</select></div>`;
+    });
+  }
+  const nInd = _imp.rows.filter(r=>r.kind==='ind').length, nSpl = _imp.rows.length - nInd;
+  h += `<button class="btn bprimary" style="width:100%;margin-top:1rem" onclick="applyImport()">&#9654; Import ${nInd} individual + ${nSpl} split times</button>
+    <button class="btn bsm" style="width:100%;margin-top:.5rem" onclick="_imp=null;document.getElementById('importPreview').innerHTML=''">Cancel</button>`;
+  box.innerHTML = h;
+}
+
+function applyImport() {
+  if (!_imp) return;
+  ensureState();
+  // Resolve each name to a swimmer id (creating new swimmers if asked)
+  const idFor = {};
+  Object.values(_imp.people).forEach(p => {
+    const choice = p.choice !== undefined ? p.choice : (p.id || '__skip');
+    if (choice === '__skip') return;
+    if (choice === '__new') {
+      const parts = p.name.replace(/\s+(Jr\.?|Sr\.?|II|III|IV)$/i,'').split(' ');
+      const first = parts[0], last = parts.slice(1).filter(t => t.replace('.','').length > 1).join(' ') || parts[parts.length-1];
+      const id = 'tm_' + Date.now() + '_' + Object.keys(idFor).length;
+      R.swimmers[id] = { id, first, last, gender: p.gender, year: p.year || '', specialty: '', swimcloud: '', events: [], times: {} };
+      idFor[p.key] = id;
+    } else {
+      idFor[p.key] = choice;
+    }
+    if (p.how !== 'exact') R.aliases[p.gender + '|' + nmNorm(p.name)] = idFor[p.key];
+  });
+
+  const have = new Set(R.swims.map(s => [s.sid, s.kind, s.event, s.date, s.meet, s.time].join('|')));
+  let added = 0, dupes = 0, skipped = 0, newBests = 0;
+  _imp.rows.forEach(r => {
+    const sid = idFor[r.gender + '|' + r.name];
+    if (!sid || !R.swimmers[sid]) { skipped++; return; }
+    const key = [sid, r.kind, r.event, r.date, r.meet, r.time].join('|');
+    if (have.has(key)) { dupes++; return; }
+    have.add(key);
+    const mkey = r.date + '|' + r.meet;
+    R.swims.push({ id: 'w' + Date.now().toString(36) + added, sid, kind: r.kind, event: r.event, time: r.time,
+      date: r.date, meet: r.meet, mkey, code: _imp.meets[mkey].code, lo: !!r.leadoff });
+    added++;
+    // Individual swims also feed the swimmer's SBT / LBT / history (relay splits don't)
+    if (r.kind === 'ind') {
+      const s = R.swimmers[sid];
+      s.times = s.times || {};
+      const t = s.times[r.event] = s.times[r.event] || { sbt: null, lbt: null, history: [] };
+      t.history = t.history || [];
+      if (!t.history.some(h => h.meet === r.meet && h.time === r.time)) t.history.push({ meet: r.meet, date: r.date, time: r.time });
+      const better = (a, b) => !b || (isDive(r.event) ? parseFloat(a) > parseFloat(b) : timeToSec(a) < timeToSec(b));
+      if (better(r.time, t.sbt)) { t.sbt = r.time; newBests++; }
+      if (better(r.time, t.lbt)) t.lbt = r.time;
+    }
+  });
+
+  // Meet list + codes
+  Object.values(_imp.meets).forEach(m => {
+    R.meetCodes[m.key] = m.code;
+    const n = R.swims.filter(s => s.mkey === m.key).length;
+    const ex = R.meets.find(x => x.key === m.key || (x.name === m.name && x.date === m.date));
+    if (ex) { ex.key = m.key; ex.code = m.code; ex.count = n; }
+    else R.meets.unshift({ key: m.key, name: m.name, date: m.date, code: m.code, count: n });
+  });
+  R.meets.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+
+  _imp = null;
+  document.getElementById('importPreview').innerHTML = '';
+  save();
+  renderAll();
+  showParseStatus(`✓ ${added} new swims imported (${newBests} new season bests)` +
+    (dupes ? ` · ${dupes} already in EagleRoster` : '') + (skipped ? ` · ${skipped} skipped` : ''), 'ok');
+}
+
+function showParseStatus(msg, type) {
+  document.getElementById('parseStatus').innerHTML = msg ? `<div class="st st${type}" style="margin-top:.75rem">${msg}</div>` : '';
+}
+
+function renderMeetHistory() {
+  const meets = R.meets || [];
+  if (!meets.length) { document.getElementById('meetHistory').innerHTML = '<div style="color:var(--text-dim);font-size:.82rem">No meets imported yet.</div>'; return; }
+  let h = '';
+  meets.forEach(m => {
+    h += `<div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border)">
+      <div><div style="font-size:.82rem;font-weight:600">${esc(m.name)}</div><div style="font-size:.7rem;color:var(--text-dim);font-family:var(--fm)">${m.date} · ${m.count} results</div></div>
+      ${m.code ? `<span class="badge code-${m.code}" style="background:var(--bg3)">${m.code}</span>` : ''}
+    </div>`;
+  });
+  document.getElementById('meetHistory').innerHTML = h;
+}
+
+// ── TOP TIMES VIEW ────────────────────────────────────────────────────────
+let _tt = { gender: 'W', kind: 'ind', season: null };
+
+function seasonOf(date) { const y = +date.slice(0,4), m = +date.slice(5,7); const s = m >= 8 ? y : y - 1; return `${s}-${String(s+1).slice(2)}`; }
+
+function setTT(k, v, el) {
+  _tt[k] = v;
+  el.parentNode.querySelectorAll('.fpill').forEach(p => p.classList.remove('act'));
+  el.classList.add('act');
+  renderTopTimes();
+}
+
+function setSwimCode(id, code, el) {
+  const s = (R.swims || []).find(x => x.id === id);
+  if (!s) return;
+  s.code = code;
+  el.className = 'code-sel code-' + code;
+  save();
+}
+
+function renderTopTimes() {
+  ensureState();
+  const list = document.getElementById('ttList');
+  const sel = document.getElementById('ttSeason');
+  const seasons = [...new Set(R.swims.map(s => seasonOf(s.date)))].sort().reverse();
+  if (!seasons.length) { sel.innerHTML = ''; list.innerHTML = '<div style="color:var(--text-dim);font-size:.82rem">No top times yet — import Team Manager reports on the Times tab.</div>'; return; }
+  if (!_tt.season || !seasons.includes(_tt.season)) _tt.season = seasons[0];
+  sel.innerHTML = seasons.map(s => `<option ${s===_tt.season?'selected':''}>${s}</option>`).join('');
+  _tt.season = sel.value;
+
+  const pool = R.swims.filter(s => s.kind === _tt.kind && seasonOf(s.date) === _tt.season &&
+    R.swimmers[s.sid] && R.swimmers[s.sid].gender === _tt.gender);
+  const byEvent = {};
+  pool.forEach(s => {
+    const best = (byEvent[s.event] = byEvent[s.event] || {});
+    const cur = best[s.sid];
+    const faster = !cur || (isDive(s.event) ? parseFloat(s.time) > parseFloat(cur.time) : timeToSec(s.time) < timeToSec(cur.time));
+    if (faster) best[s.sid] = s;
+  });
+  const events = Object.keys(byEvent).sort((a,b) => {
+    const ia = TT_ORDER.indexOf(a), ib = TT_ORDER.indexOf(b);
+    return (ia<0?99:ia) - (ib<0?99:ib) || a.localeCompare(b);
+  });
+  if (!events.length) { list.innerHTML = '<div style="color:var(--text-dim);font-size:.82rem">No times for this selection.</div>'; return; }
+
+  let h = '';
+  events.forEach(ev => {
+    const rows = Object.values(byEvent[ev]).sort((a,b) => isDive(ev) ? parseFloat(b.time)-parseFloat(a.time) : timeToSec(a.time)-timeToSec(b.time));
+    h += `<div class="card"><div class="ct">${esc(ev)}${_tt.kind==='split'?' · relay split':''}</div><table class="tbl"><tbody>`;
+    rows.forEach((s, i) => {
+      const tied = rows.filter(x => x.time === s.time).length > 1;
+      const rank = rows.findIndex(x => x.time === s.time) + 1;
+      const sw = R.swimmers[s.sid];
+      h += `<tr>
+        <td class="tt-rank">${rank}${tied?'*':''}</td>
+        <td><div style="font-weight:600;font-size:.8rem">${esc(sw.first)} ${esc(sw.last)} <span class="badge ${YEAR_COLORS[sw.year]||'bbk'}">${sw.year||'—'}</span></div>
+            <div class="tt-meet">${esc(s.meet)} · ${s.date}</div></td>
+        <td class="ttime" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.lo?'<span class="badge lo">LO</span>':''}</td>
+        <td style="width:4.5rem;text-align:right"><select class="code-sel code-${s.code}" onchange="setSwimCode('${s.id}',this.value,this)">${
+          REST_CODES.map(c=>`<option ${c===s.code?'selected':''}>${c}</option>`).join('')}</select></td>
+      </tr>`;
+    });
+    h += '</tbody></table></div>';
+  });
+  list.innerHTML = h;
+}
+
+// ── MANUAL TIME ENTRY ─────────────────────────────────────────────────────
+function populateManualDropdowns() {
+  const ss = document.getElementById('manSwimmer');
+  const swimmers = Object.values(R.swimmers).sort((a,b)=>(a.last+a.first).localeCompare(b.last+b.first));
+  ss.innerHTML = '<option value="">— select —</option>' + swimmers.map(s=>`<option value="${s.id}">${esc(s.last)}, ${esc(s.first)}</option>`).join('');
+  const se = document.getElementById('manEvent');
+  se.innerHTML = '<option value="">— select —</option>' + EVENTS_IND.map(e=>`<option value="${esc(e)}">${esc(e)}</option>`).join('');
+}
+
+function addManualTime() {
+  const sid = document.getElementById('manSwimmer').value;
+  const ev = document.getElementById('manEvent').value;
+  const time = document.getElementById('manTime').value.trim();
+  const meet = document.getElementById('manMeet').value.trim() || 'Manual entry';
+  const date = document.getElementById('manDate').value || new Date().toISOString().slice(0,10);
+  if (!sid || !ev || !time) { alert('Swimmer, event, and time are required.'); return; }
+  const s = R.swimmers[sid];
+  if (!s.times) s.times = {};
+  if (!s.times[ev]) s.times[ev] = { sbt: null, lbt: null, history: [] };
+  const t = s.times[ev];
+  t.history.push({ meet, date, time });
+  if (!t.sbt || timeToSec(time) < timeToSec(t.sbt)) t.sbt = time;
+  if (!t.lbt || timeToSec(time) < timeToSec(t.lbt)) t.lbt = time;
+  save();
+  renderRoster();
+  document.getElementById('manTime').value = '';
+  alert(`Added ${time} for ${s.first} ${s.last} in ${ev}`);
+}
+
+// ── REPORTS ───────────────────────────────────────────────────────────────
+const REPORT_COLS = {
+  ncaa_cheer: [
+    {id:'ltbt', label:'LTBT', default:true},
+    {id:'sbt', label:'SBT', default:true},
+    {id:'afinal', label:'24 A Final', default:true},
+    {id:'bfinal', label:'24 B Final', default:true},
+    {id:'ncaarec', label:'NCAA Rec', default:true},
+    {id:'vr', label:'Varsity Record', default:true},
+  ],
+  uaa_cheer: [
+    {id:'ltbt', label:'LTBT', default:true},
+    {id:'sbt', label:'SBT', default:true},
+    {id:'ncaacut', label:'NCAA Cut', default:true},
+    {id:'ncaarec', label:'NCAA Rec', default:false},
+    {id:'vr', label:'Varsity Record', default:true},
+  ],
+  progress: [
+    {id:'sbt', label:'SBT', default:true},
+    {id:'ltbt', label:'LBT', default:true},
+    {id:'drop', label:'Drop (secs)', default:true},
+    {id:'pct', label:'% Drop', default:true},
+    {id:'entries', label:'# Results', default:true},
+  ]
+};
+
+function selectReport(type, el) {
+  _currentReport = type;
+  document.querySelectorAll('#reportTypeList .scard').forEach(c=>c.style.borderColor='');
+  el.style.borderColor = 'var(--gold)';
+  renderColPicker();
+}
+
+function renderColPicker() {
+  const cols = REPORT_COLS[_currentReport] || [];
+  document.getElementById('colPicker').innerHTML = cols.map(c =>
+    `<label class="check-item"><input type="checkbox" id="col_${c.id}" ${c.default?'checked':''}> ${c.label}</label>`
+  ).join('');
+}
+
+function renderReportEvents() {
+  const evs = EVENTS_IND.filter(e=>!e.includes('Relay'));
+  document.getElementById('repEventPicker').innerHTML = evs.map(e =>
+    `<label class="check-item"><input type="checkbox" value="${esc(e)}" checked> ${esc(e)}</label>`
+  ).join('');
+}
+
+async function generateReport() {
+  const gender = document.getElementById('repGender').value;
+  const year = document.getElementById('repYear').value;
+  const selectedEvents = [...document.querySelectorAll('#repEventPicker input:checked')].map(i=>i.value);
+  const selectedCols = [...document.querySelectorAll('#colPicker input:checked')].map(i=>i.id.replace('col_',''));
+
+  // Parse reference data
+  const aFinal = parseCuts(document.getElementById('aFinalCuts').value);
+  const bFinal = parseCuts(document.getElementById('bFinalCuts').value);
+  const ncaaRec = parseCuts(document.getElementById('ncaaRecs').value);
+  const vr = parseCuts(document.getElementById('varsityRecs').value);
+
+  // Filter swimmers
+  let swimmers = Object.values(R.swimmers);
+  if (gender !== 'all') swimmers = swimmers.filter(s=>s.gender===gender);
+  if (year !== 'all') swimmers = swimmers.filter(s=>s.year===year);
+  swimmers.sort((a,b)=>a.last.localeCompare(b.last));
+
+  // Build rows grouped by event
+  const rows = []; // {event, day, name, ltbt, sbt, afinal, bfinal, ncaarec, vr}
+  selectedEvents.forEach(ev => {
+    const inEvent = swimmers.filter(s => s.events && s.events.includes(ev));
+    if (!inEvent.length) return;
+    inEvent.forEach((s, i) => {
+      const t = (s.times||{})[ev] || {};
+      rows.push({
+        isFirst: i===0, event: ev,
+        name: s.first+' '+s.last,
+        ltbt: t.lbt||'', sbt: t.sbt||'',
+        afinal: aFinal[ev]||'', bfinal: bFinal[ev]||'',
+        ncaarec: ncaaRec[ev]||'', vr: vr[ev]||'',
+        entries: (t.history||[]).length,
+        drop: (t.lbt&&t.sbt) ? (timeToSec(t.lbt)-timeToSec(t.sbt)).toFixed(2) : '',
+        pct: (t.lbt&&t.sbt) ? (((timeToSec(t.lbt)-timeToSec(t.sbt))/timeToSec(t.lbt))*100).toFixed(2)+'%' : ''
+      });
+    });
+  });
+
+  if (!rows.length) { document.getElementById('reportStatus').innerHTML='<div class="st sterr">No swimmers matched the selected filters and events.</div>'; return; }
+
+  document.getElementById('reportStatus').innerHTML='<div class="st stinfo">Building Excel file...</div>';
+
+  // Build the xlsx via Python in-browser isn't possible — use Claude API to generate a download
+  // Instead we'll build a CSV which opens perfectly in Excel
+  const colMap = {
+    ltbt:'LTBT', sbt:'SBT', afinal:'24 A Final', bfinal:'24 B Final',
+    ncaarec:'NCAA Rec', vr:'EU VR', drop:'Drop (s)', pct:'% Drop',
+    entries:'# Results', ncaacut:'NCAA Cut'
+  };
+  const headers = ['Day','Event','Racer',...selectedCols.map(c=>colMap[c]||c)];
+  const csvRows = [headers.join(',')];
+
+  // Day detection (simple — group by event order)
+  const dayMap = buildDayMap(selectedEvents);
+
+  rows.forEach(r => {
+    const day = r.isFirst ? (dayMap[r.event]||'') : '';
+    const event = r.isFirst ? r.event : '';
+    const cols = selectedCols.map(c => {
+      const v = r[c] || '';
+      return '"'+String(v).replace(/"/g,'""')+'"';
+    });
+    csvRows.push([`"${day}"`,`"${event}"`,`"${r.name}"`,...cols].join(','));
+    if (r.isFirst) csvRows.push(''); // blank row between events
+  });
+
+  const blob = new Blob([csvRows.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const reportName = {ncaa_cheer:'NCAA_Cheer_Sheet', uaa_cheer:'UAA_Cheer_Sheet', progress:'Season_Progress'}[_currentReport]||'Report';
+  a.download = `Emory_${reportName}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  document.getElementById('reportStatus').innerHTML='<div class="st stok">✓ Downloaded — open in Excel to format.</div>';
+}
+
+function parseCuts(text) {
+  const map = {};
+  (text||'').split('\n').forEach(line => {
+    const parts = line.split(',');
+    if (parts.length >= 2) map[parts[0].trim()] = parts.slice(1).join(',').trim();
+  });
+  return map;
+}
+
+function buildDayMap(events) {
+  // Simple day grouping based on typical NCAA schedule
+  const map = {};
+  const day1 = ['500 FS','200 IM','50 FS','400 MR Relay'];
+  const day2 = ['400 IM','100 FL','200 FS','100 BR','100 BK','200 FR Relay','1650 FS'];
+  const day3 = ['200 BK','100 FS','200 BR','200 FL','400 FR Relay'];
+  events.forEach(ev => {
+    if (day1.includes(ev)) map[ev]='Day 1';
+    else if (day2.includes(ev)) map[ev]='Day 2';
+    else if (day3.includes(ev)) map[ev]='Day 3';
+    else map[ev]='Day 4';
+  });
+  return map;
+}
+
+// ── RELAY BUILDER ─────────────────────────────────────────────────────────
+function renderRelays() {
+  const gender = document.getElementById('relayGender').value;
+  const swimmers = Object.values(R.swimmers).filter(s=>s.gender===gender);
+  let h = '';
+
+  const relays = ['200 FR Relay','400 FR Relay','800 FR Relay','200 MR Relay','400 MR Relay'];
+  relays.forEach(relay => {
+    const info = RELAY_LEGS[relay];
+    // Get candidates with relevant times
+    let candidates = [];
+    if (relay.includes('MR')) {
+      ['BK','BR','FL','FS'].forEach((stroke, leg) => {
+        const evMap = {BK:'100 BK',BR:'100 BR',FL:'100 FL',FS:'100 FS'};
+        const ev = evMap[stroke];
+        const pool = swimmers.map(s => {
+          const t = (s.times||{})[ev];
+          return { s, ev, time: t?.sbt||t?.lbt||null };
+        }).filter(x=>x.time).sort((a,b)=>timeToSec(a.time)-timeToSec(b.time));
+        candidates.push({ stroke, ev, pool, best: pool[0] });
+      });
+    } else {
+      const evMap = {50:'50 FS',100:'100 FS',200:'200 FS'};
+      const ev = evMap[info.dist];
+      const pool = swimmers.map(s => {
+        const t = (s.times||{})[ev];
+        return { s, ev, time: t?.sbt||t?.lbt||null };
+      }).filter(x=>x.time).sort((a,b)=>timeToSec(a.time)-timeToSec(b.time));
+      for (let i=0;i<4;i++) candidates.push({stroke:'FS', ev, pool, best: pool[i]||null});
+    }
+
+    // Projected time
+    const total = candidates.reduce((sum,c)=>sum+(c.best?timeToSec(c.best.time):0),0);
+    const projected = total > 0 ? secToTime(total) : '—';
+
+    h += `<div class="card"><div class="ct">${relay}</div>`;
+    h += `<div style="margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between"><span style="font-size:.78rem;color:var(--text-dim)">Projected</span><span style="font-family:var(--fm);font-size:.9rem;color:var(--gold);font-weight:700">${projected}</span></div>`;
+    candidates.forEach((c, i) => {
+      const stroke = relay.includes('MR') ? ['BK','BR','FL','FS'][i] : 'FS';
+      const name = c.best ? `${c.best.s.first} ${c.best.s.last}` : '— open —';
+      const time = c.best ? c.best.time : '';
+      const opts = '<option value="">— open —</option>' + (c.pool||[]).map(p =>
+        `<option value="${esc(p.s.id)}" ${c.best&&p.s.id===c.best.s.id?'selected':''}>${esc(p.s.last)}, ${esc(p.s.first)} (${p.time})</option>`
+      ).join('');
+      h += `<div class="relay-lane">
+        <span class="lane-num">${i+1}</span>
+        <div>
+          <select style="font-size:.75rem" onchange="updateRelay()">${opts}</select>
+          <div style="font-size:.65rem;color:var(--text-dim);font-family:var(--fm);margin-top:.2rem">${stroke} · ${c.ev||''}</div>
+        </div>
+        <span style="font-family:var(--fm);font-size:.78rem;color:${time?'var(--green)':'var(--text-dim)'};">${time||'—'}</span>
+      </div>`;
+    });
+    h += '</div>';
+  });
+  document.getElementById('relayGrid').innerHTML = h || '<div style="color:var(--text-dim)">No swimmers with times yet.</div>';
+}
+
+function updateRelay() { renderRelays(); }
+
+// ── UTILITIES ─────────────────────────────────────────────────────────────
+function timeToSec(t) {
+  if (!t) return 9999;
+  t = t.toString().trim().replace(/^:/,'');
+  const parts = t.split(':');
+  if (parts.length === 2) return parseFloat(parts[0])*60 + parseFloat(parts[1]);
+  return parseFloat(parts[0]);
+}
+
+function secToTime(s) {
+  const m = Math.floor(s/60);
+  const sec = (s%60).toFixed(2).padStart(5,'0');
+  return m > 0 ? `${m}:${sec}` : sec;
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function importRosterCSV() {
+  // Trigger hidden file input for JSON import from swimcloud_scraper.py
+  let inp = document.getElementById('_importInput');
+  if (!inp) {
+    inp = document.createElement('input');
+    inp.type = 'file'; inp.id = '_importInput'; inp.accept = '.json';
+    inp.style.display = 'none';
+    document.body.appendChild(inp);
+    inp.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const data = JSON.parse(ev.target.result);
+          applyScraperImport(data);
+        } catch(err) {
+          alert('Invalid JSON file: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+      inp.value = '';
+    });
+  }
+  inp.click();
+}
+
+function applyScraperImport(data) {
+  // Accepts output from swimcloud_scraper.py
+  // { source, scraped, swimmers: { id: { first, last, gender, year, times, events, swimcloud } } }
+  if (!data.swimmers) { alert('Unrecognized file format. Expected swimcloud_scraper.py output.'); return; }
+
+  const incoming = data.swimmers;
+  let added = 0, updated = 0, timesUpdated = 0;
+
+  Object.values(incoming).forEach(s => {
+    const existing = R.swimmers[s.id];
+    if (existing) {
+      // Merge times: incoming LBT wins if faster; incoming SBT wins if faster
+      const existingTimes = existing.times || {};
+      const newTimes = s.times || {};
+      Object.entries(newTimes).forEach(([ev, t]) => {
+        if (!existingTimes[ev]) {
+          existingTimes[ev] = t;
+          timesUpdated++;
+        } else {
+          const et = existingTimes[ev];
+          if (t.lbt && (!et.lbt || timeToSec(t.lbt) < timeToSec(et.lbt))) { et.lbt = t.lbt; timesUpdated++; }
+          if (t.sbt && (!et.sbt || timeToSec(t.sbt) < timeToSec(et.sbt))) { et.sbt = t.sbt; timesUpdated++; }
+          // merge history (avoid duplicates by meet+time)
+          const existingKeys = new Set((et.history||[]).map(h=>h.meet+h.time));
+          (t.history||[]).forEach(h => { if (!existingKeys.has(h.meet+h.time)) et.history.push(h); });
+        }
+      });
+      existing.times = existingTimes;
+      existing.events = [...new Set([...(existing.events||[]), ...(s.events||[])])];
+      if (s.swimcloud && !existing.swimcloud) existing.swimcloud = s.swimcloud;
+      updated++;
+    } else {
+      R.swimmers[s.id] = {
+        id: s.id,
+        first: s.first, last: s.last,
+        gender: s.gender, year: s.year || 'FR',
+        specialty: '',
+        swimcloud: s.swimcloud || '',
+        swimcloudId: s.swimcloudId || '',
+        events: s.events || [],
+        times: s.times || {}
+      };
+      timesUpdated += Object.keys(s.times||{}).length;
+      added++;
+    }
+  });
+
+  save();
+  renderAll();
+  alert(`✅ Import complete from SwimCloud scrape (${data.scraped||'unknown date'})\n\n• ${added} new swimmers added\n• ${updated} existing swimmers updated\n• ${timesUpdated} time entries merged`);
+}
+
+// ── RENDER ALL ─────────────────────────────────────────────────────────────
+function renderAll() {
+  ensureState();
+  renderRoster();
+  renderMeetHistory();
+  populateManualDropdowns();
+  renderColPicker();
+  updateMeta();
+  if (document.getElementById('tab-toptimes').classList.contains('act')) renderTopTimes();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+function init() {
+  // Load from localStorage first
+  try {
+    const local = localStorage.getItem('eagleroster');
+    if (local) R = JSON.parse(local);
+  } catch(e) {}
+
+  renderAll();
+  renderColPicker();
+
+  // Select first report type visually
+  const first = document.querySelector('#reportTypeList .scard');
+  if (first) first.style.borderColor = 'var(--gold)';
+
+  // Connect Firebase
+  tryConnect();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('click', e => {
+  if (e.target === document.getElementById('swimmerModal')) closeSwimmerModal();
+  if (e.target === document.getElementById('detailModal')) closeDetailModal();
+});
+</script>
+</body>
+</html>
