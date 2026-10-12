@@ -364,6 +364,10 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div class="fpill act" data-v="W" onclick="setTT('gender','W',this)">Women</div>
     <div class="fpill" data-v="M" onclick="setTT('gender','M',this)">Men</div>
   </div>
+  <div class="fbar" id="ttViewBar">
+    <div class="fpill act" data-v="event" onclick="setTT('view','event',this)">By Event</div>
+    <div class="fpill" data-v="name" onclick="setTT('view','name',this)">By Name</div>
+  </div>
   <div class="fbar" id="ttKindBar">
     <div class="fpill act" data-v="ind" onclick="setTT('kind','ind',this)">Individual</div>
     <div class="fpill" data-v="split" onclick="setTT('kind','split',this)">Relay Splits</div>
@@ -1077,7 +1081,7 @@ function renderMeetHistory() {
 }
 
 // ── TOP TIMES VIEW ────────────────────────────────────────────────────────
-let _tt = { gender: 'W', kind: 'ind', season: null };
+let _tt = { gender: 'W', kind: 'ind', season: null, view: 'event' };
 
 function seasonOf(date) { const y = +date.slice(0,4), m = +date.slice(5,7); const s = m >= 8 ? y : y - 1; return `${s}-${String(s+1).slice(2)}`; }
 
@@ -1094,6 +1098,43 @@ function setSwimCode(id, code, el) {
   s.code = code;
   el.className = 'code-sel code-' + code;
   save();
+}
+
+const ttCodeSel = s => `<select class="code-sel code-${s.code}" onchange="setSwimCode('${s.id}',this.value,this)">${
+  REST_CODES.map(c=>`<option ${c===s.code?'selected':''}>${c}</option>`).join('')}</select>`;
+const ttSort = ev => (a,b) => isDive(ev) ? parseFloat(b.time)-parseFloat(a.time) : timeToSec(a.time)-timeToSec(b.time);
+
+// One card per athlete: best swim in each event this season + where it ranks on the team
+function renderTopTimesByName(byEvent, events) {
+  const rankOf = {};   // sid|event -> team rank (ties share a rank)
+  events.forEach(ev => {
+    const rows = Object.values(byEvent[ev]).sort(ttSort(ev));
+    rows.forEach(s => { rankOf[s.sid + '|' + ev] = rows.findIndex(x => x.time === s.time) + 1; });
+  });
+  const people = {};
+  events.forEach(ev => Object.values(byEvent[ev]).forEach(s => (people[s.sid] = people[s.sid] || []).push(s)));
+  const sids = Object.keys(people).sort((a,b) => {
+    const A = R.swimmers[a], B = R.swimmers[b];
+    return (A.last+A.first).localeCompare(B.last+B.first);
+  });
+  let h = '';
+  sids.forEach(sid => {
+    const sw = R.swimmers[sid];
+    h += `<div class="card"><div class="ct" style="display:flex;justify-content:space-between;align-items:center">
+      <span style="color:var(--text);font-family:var(--fd);font-size:.85rem;letter-spacing:0;text-transform:none;font-weight:600">${esc(sw.first)} ${esc(sw.last)} ${classBadge(sw)}</span>
+      <span>${people[sid].length} event${people[sid].length!==1?'s':''}</span></div><table class="tbl"><tbody>`;
+    people[sid].forEach(s => {
+      h += `<tr>
+        <td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(s.event)}</td>
+        <td><div class="tt-meet">${esc(s.meet)} · ${s.date}</div></td>
+        <td class="ttime" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.lo?'<span class="badge lo">LO</span>':''}</td>
+        <td class="tt-rank" style="text-align:right" title="Team rank in this event">#${rankOf[sid+'|'+s.event]}</td>
+        <td style="width:4.5rem;text-align:right">${ttCodeSel(s)}</td>
+      </tr>`;
+    });
+    h += '</tbody></table></div>';
+  });
+  return h;
 }
 
 function renderTopTimes() {
@@ -1120,6 +1161,7 @@ function renderTopTimes() {
     return (ia<0?99:ia) - (ib<0?99:ib) || a.localeCompare(b);
   });
   if (!events.length) { list.innerHTML = '<div style="color:var(--text-dim);font-size:.82rem">No times for this selection.</div>'; return; }
+  if (_tt.view === 'name') { list.innerHTML = renderTopTimesByName(byEvent, events); return; }
 
   let h = '';
   events.forEach(ev => {
