@@ -263,10 +263,13 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <h3>Team Roster</h3>
     <div style="display:flex;gap:.5rem">
       <button class="btn bsm" onclick="importRosterCSV()">&#8679; Import from SwimCloud</button>
+      <button class="btn bsm" onclick="openAddSwimmer(true)">+ Add Recruit</button>
       <button class="btn bsm bprimary" onclick="openAddSwimmer()">+ Add Swimmer</button>
     </div>
   </div>
-  <div class="fbar">
+  <div class="fbar" id="rosterSeasonBar"></div>
+  <div id="rosterSummary" style="font-size:.72rem;font-family:var(--fm);color:var(--text-dim);margin:-.25rem 0 1rem;line-height:1.7"></div>
+  <div class="fbar" id="rosterFilterBar">
     <div class="fpill act" onclick="setRosterFilter('all',this)">All</div>
     <div class="fpill" onclick="setRosterFilter('W',this)">Women</div>
     <div class="fpill" onclick="setRosterFilter('M',this)">Men</div>
@@ -510,10 +513,10 @@ const YEAR_COLORS = {FR:'by1',SO:'by2',JR:'bm',SR:'bw',GS:'bfr',INC:'bfr'};
 // ── CLASS FROM GRAD YEAR ──────────────────────────────────────────────────
 // Season runs Aug–Jul; the 2026–27 season "ends" in 2027, so its seniors are the Class of 2027.
 function seasonEndYear(d) { d = d || new Date(); return d.getMonth() >= 7 ? d.getFullYear() + 1 : d.getFullYear(); }
-function classOf(s) {
+function classOf(s, end) {
   if (!s) return '';
   if (s.archived) return 'ARCH';
-  const end = seasonEndYear();
+  end = end || seasonEndYear();
   if (s.gradYear && +s.gradYear < end) return 'ALUM';
   if (s.gs) return 'GS';
   if (!s.gradYear) return '';
@@ -521,8 +524,9 @@ function classOf(s) {
   return left <= 0 ? 'SR' : left === 1 ? 'JR' : left === 2 ? 'SO' : left === 3 ? 'FR' : 'INC';
 }
 // Active = on this season's team: not graduated, not archived, not an incoming athlete who starts next year or later
-function isActive(s) { const c = classOf(s); return c !== 'ALUM' && c !== 'ARCH' && c !== 'INC'; }
-function classBadge(s) { const c = classOf(s); return `<span class="badge ${YEAR_COLORS[c]||'bbk'}">${c||'—'}</span>`; }
+function isActive(s, end) { const c = classOf(s, end); return c !== 'ALUM' && c !== 'ARCH' && c !== 'INC'; }
+function classBadge(s, end) { const c = classOf(s, end); return `<span class="badge ${YEAR_COLORS[c]||'bbk'}">${c||'—'}</span>`; }
+const seasonLabel = end => `${end-1}–${String(end).slice(2)}`;
 
 // ── STATE ──────────────────────────────────────────────────────────────────
 let R = { swimmers: {}, meets: [] }; // main roster state
@@ -579,7 +583,7 @@ function save() {
 }
 
 function updateMeta() {
-  const act = Object.values(R.swimmers).filter(isActive);
+  const act = Object.values(R.swimmers).filter(s => isActive(s));
   const count = act.length;
   const w = act.filter(s=>s.gender==='W').length;
   const m = act.filter(s=>s.gender==='M').length;
@@ -605,13 +609,36 @@ function setRosterFilter(f, el) {
   renderRoster();
 }
 
+let _rosterSeason = null;   // season end year shown on the Roster tab (null = current)
+function setRosterSeason(end, el) { _rosterSeason = end; renderRoster(); }
+
+function renderRosterSeasons() {
+  const now = seasonEndYear(), sel = _rosterSeason || now;
+  let h = '';
+  for (let e = now; e <= now + 4; e++)
+    h += `<div class="fpill ${e===sel?'act':''}" onclick="setRosterSeason(${e},this)">${seasonLabel(e)}${e===now?' (now)':''}</div>`;
+  document.getElementById('rosterSeasonBar').innerHTML = h;
+  // planning summary for that season
+  const act = Object.values(R.swimmers).filter(s => isActive(s, sel));
+  const line = (g, label) => {
+    const p = act.filter(s => s.gender === g), c = {};
+    p.forEach(s => { const k = classOf(s, sel) || '—'; c[k] = (c[k]||0) + 1; });
+    const parts = ['FR','SO','JR','SR','GS','—'].filter(k => c[k]).map(k => `${k} ${c[k]}`);
+    return `<b style="color:var(--text)">${label} ${p.length}</b> · ${parts.join(' · ') || 'none'}`;
+  };
+  document.getElementById('rosterSummary').innerHTML =
+    `${seasonLabel(sel)}${sel>now?' projected':''}: <b style="color:var(--gold)">${act.length} athletes</b><br>${line('W','Women')}<br>${line('M','Men')}`;
+}
+
 function renderRoster() {
+  renderRosterSeasons();
+  const end = _rosterSeason || seasonEndYear();
   const q = (document.getElementById('rosterQ').value||'').toLowerCase();
   let swimmers = Object.values(R.swimmers);
-  if (!document.getElementById('showAlumni').checked) swimmers = swimmers.filter(isActive);
+  if (!document.getElementById('showAlumni').checked) swimmers = swimmers.filter(s => isActive(s, end));
   if (_rosterFilter !== 'all') {
     if (['M','W'].includes(_rosterFilter)) swimmers = swimmers.filter(s=>s.gender===_rosterFilter);
-    else swimmers = swimmers.filter(s=>classOf(s)===_rosterFilter);
+    else swimmers = swimmers.filter(s=>classOf(s, end)===_rosterFilter);
   }
   if (q) swimmers = swimmers.filter(s =>
     (s.first+' '+s.last).toLowerCase().includes(q) ||
@@ -638,11 +665,11 @@ function renderRoster() {
       const txtColor = s.gender==='W'?'var(--purple)':'var(--blue)';
       const evCount = (s.events||[]).length;
       const sbt = getBestTime(s.id);
-      h += `<div class="scard" onclick="openDetail('${s.id}')"${isActive(s)?'':' style="opacity:.55"'}>
+      h += `<div class="scard" onclick="openDetail('${s.id}')"${isActive(s, end)?'':' style="opacity:.55"'}>
         <div class="savatar" style="background:${bgColor};color:${txtColor}">${esc(initials)}</div>
         <div class="sinfo">
           <div class="sname">${esc(s.first)} ${esc(s.last)}</div>
-          <div class="smeta">${classBadge(s)}${s.gradYear?` '${String(s.gradYear).slice(2)}`:''} ${evCount} event${evCount!==1?'s':''} · ${sbt}</div>
+          <div class="smeta">${classBadge(s, end)}${s.gradYear?` '${String(s.gradYear).slice(2)}`:''} ${evCount} event${evCount!==1?'s':''} · ${sbt}</div>
         </div>
         <button class="btn bsm" onclick="event.stopPropagation();openEditSwimmer('${s.id}')" style="flex-shrink:0">Edit</button>
       </div>`;
@@ -668,14 +695,15 @@ function buildEventPicker(selected) {
   }).join('');
 }
 
-function openAddSwimmer() {
+function openAddSwimmer(recruit) {
   _currentSwimmerId = null;
-  document.getElementById('swimmerModalTitle').textContent = 'Add Swimmer';
+  document.getElementById('swimmerModalTitle').textContent = recruit ? 'Add Recruit' : 'Add Swimmer';
   document.getElementById('deleteSwimmerBtn').style.display = 'none';
   document.getElementById('swimmerStatus').innerHTML = '';
   ['sfirst','slast','scloud'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('sgender').value = 'W';
-  document.getElementById('sgrad').value = seasonEndYear() + 3;
+  // a recruit committing now is next fall's freshman class
+  document.getElementById('sgrad').value = seasonEndYear() + (recruit ? 4 : 3);
   document.getElementById('sgs').checked = false;
   document.getElementById('sarch').checked = false;
   document.getElementById('sspec').value = '';
@@ -1459,7 +1487,7 @@ function renderTopTimes() {
 // ── MANUAL TIME ENTRY ─────────────────────────────────────────────────────
 function populateManualDropdowns() {
   const ss = document.getElementById('manSwimmer');
-  const swimmers = Object.values(R.swimmers).filter(isActive).sort((a,b)=>(a.last+a.first).localeCompare(b.last+b.first));
+  const swimmers = Object.values(R.swimmers).filter(s => isActive(s)).sort((a,b)=>(a.last+a.first).localeCompare(b.last+b.first));
   ss.innerHTML = '<option value="">— select —</option>' + swimmers.map(s=>`<option value="${s.id}">${esc(s.last)}, ${esc(s.first)}</option>`).join('');
   const se = document.getElementById('manEvent');
   se.innerHTML = '<option value="">— select —</option>' + EVENTS_IND.map(e=>`<option value="${esc(e)}">${esc(e)}</option>`).join('');
@@ -1545,7 +1573,7 @@ async function generateReport() {
   const vr = parseCuts(document.getElementById('varsityRecs').value);
 
   // Filter swimmers
-  let swimmers = Object.values(R.swimmers).filter(isActive);
+  let swimmers = Object.values(R.swimmers).filter(s => isActive(s));
   if (gender !== 'all') swimmers = swimmers.filter(s=>s.gender===gender);
   if (year !== 'all') swimmers = swimmers.filter(s=>classOf(s)===year);
   swimmers.sort((a,b)=>a.last.localeCompare(b.last));
