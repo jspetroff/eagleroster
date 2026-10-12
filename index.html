@@ -759,6 +759,7 @@ function saveSwimmer() {
     archived: document.getElementById('sarch').checked,
     specialty: document.getElementById('sspec').value,
     swimcloud: document.getElementById('scloud').value.trim(),
+    swimcloudId: ((document.getElementById('scloud').value.match(/swimmer\/(\d+)/) || [])[1]) || existing.swimcloudId || '',
     events,
     times: existing.times || {}
   };
@@ -1786,7 +1787,9 @@ function applyScraperImport(data) {
   }
 
   Object.values(incoming).forEach(s => {
-    const existing = R.swimmers[s.id];
+    // match on id, or on the SwimCloud ID from a profile link entered by hand (e.g. a recruit)
+    const existing = R.swimmers[s.id] || (s.swimcloudId && Object.values(R.swimmers).find(x =>
+      String(x.swimcloudId || ((x.swimcloud || '').match(/swimmer\/(\d+)/) || [])[1] || '') === String(s.swimcloudId)));
     if (existing) {
       // Merge times: incoming LBT wins if faster; incoming SBT wins if faster
       const existingTimes = existing.times || {};
