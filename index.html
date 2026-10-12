@@ -443,6 +443,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   </div>
   <div class="fbar" id="ttAllBar">
     <div class="fpill act" data-v="best" onclick="setTT('all',false,this)">Best per athlete</div>
+    <div class="fpill" data-v="code" onclick="setTT('all','code',this)">Best per code</div>
     <div class="fpill" data-v="all" onclick="setTT('all',true,this)">All swims this season</div>
   </div>
   <div id="ttPrint" class="print-only"></div>
@@ -1394,7 +1395,7 @@ function printTopTimes() {
   // Short meet name for the line: drop year/season tags ("2026-2027 GT vs Emory" -> "GT vs Emory")
   const sm = m => esc((m || '').replace(/\b(19|20)\d\d(\s*[-–\/]\s*(19|20)?\d\d)?\b/g, ' ').replace(/\s+/g, ' ').trim() || m);
   const mt = s => `<td class="mt" title="${esc(s.meet)}">${sm(s.meet)} <span class="pc">${md(s.date)}</span></td>`;
-  const codeTxt = (ttCodesFiltered() ? 'Codes: ' + [..._tt.codes].join(' + ') : 'All codes') + (_tt.all ? ' · all swims' : ' · best per athlete');
+  const codeTxt = (ttCodesFiltered() ? 'Codes: ' + [..._tt.codes].join(' + ') : 'All codes') + (_tt.all === true ? ' · all swims' : _tt.all === 'code' ? ' · best per athlete per code' : ' · best per athlete');
   const used = {};
   events.forEach(ev => Object.values(byEvent[ev]).forEach(s => used[s.date + '|' + s.meet] = s));
   const meets = Object.values(used).sort((a,b) => a.date.localeCompare(b.date))
@@ -1482,11 +1483,12 @@ function renderTopTimes() {
     R.swimmers[s.sid] && R.swimmers[s.sid].gender === _tt.gender);
   const byEvent = {};
   pool.forEach(s => {
-    if (_tt.all) { (byEvent[s.event] = byEvent[s.event] || []).push(s); return; }
+    if (_tt.all === true) { (byEvent[s.event] = byEvent[s.event] || []).push(s); return; }
     const best = (byEvent[s.event] = byEvent[s.event] || {});
-    const cur = best[s.sid];
+    const key = _tt.all === 'code' ? s.sid + '|' + s.code : s.sid;   // best per athlete, or per athlete per code
+    const cur = best[key];
     const faster = !cur || (isDive(s.event) ? parseFloat(s.time) > parseFloat(cur.time) : timeToSec(s.time) < timeToSec(cur.time));
-    if (faster) best[s.sid] = s;
+    if (faster) best[key] = s;
   });
   const events = Object.keys(byEvent).sort((a,b) => {
     const ia = TT_ORDER.indexOf(a), ib = TT_ORDER.indexOf(b);
