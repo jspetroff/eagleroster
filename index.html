@@ -385,12 +385,32 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div class="sec-hdr">
     <h3>Relay Builder</h3>
     <div style="display:flex;gap:.5rem;align-items:center">
-      <select id="relayGender" onchange="renderRelays()" style="width:auto">
-        <option value="W">Women</option>
-        <option value="M">Men</option>
-      </select>
+      <select id="relaySeason" onchange="_rl.season=this.value;_rlManual={};renderRelays()" style="width:auto"></select>
     </div>
   </div>
+  <div class="fbar">
+    <div class="fpill act" onclick="setRL('gender','W',this)">Women</div>
+    <div class="fpill" onclick="setRL('gender','M',this)">Men</div>
+  </div>
+  <div class="fbar">
+    <div class="fpill" onclick="setRL('count',1,this)">A</div>
+    <div class="fpill" onclick="setRL('count',2,this)">A–B</div>
+    <div class="fpill act" onclick="setRL('count',3,this)">A–C</div>
+    <div class="fpill" onclick="setRL('count',4,this)">A–D</div>
+    <div class="fpill" onclick="setRL('count',5,this)">A–E</div>
+  </div>
+  <div class="fbar">
+    <div class="fpill act" onclick="setRL('mode','best',this)">Best (A fastest)</div>
+    <div class="fpill" onclick="setRL('mode','even',this)">Even relays</div>
+  </div>
+  <div class="fbar">
+    <div class="fpill act" onclick="setRL('code','all',this)">All codes</div>
+    <div class="fpill" onclick="setRL('code','U',this)">U</div>
+    <div class="fpill" onclick="setRL('code','UwS',this)">UwS</div>
+    <div class="fpill" onclick="setRL('code','S',this)">S</div>
+  </div>
+  <div style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Lead-off = best flat-start time (incl. relay lead-offs). Legs 2–4 = best relay split; <span style="color:var(--gold)">gold</span> = no split yet, flat-start time used. • in a dropdown = already on another relay of this event (picking them swaps the two).</div>
+  <div id="relayManualNote" class="st stinfo" style="display:none">Edited by hand. <a href="#" onclick="_rlManual={};renderRelays();return false" style="color:var(--gold)">Reset to auto</a></div>
   <div class="cgrid" id="relayGrid"></div>
 </div>
 
@@ -1662,64 +1682,206 @@ function buildDayMap(events) {
 }
 
 // ── RELAY BUILDER ─────────────────────────────────────────────────────────
+// Lead-off leg = best individual (flat-start) time, incl. relay lead-offs.
+// Legs 2-4    = best relay split; if none, the flat-start time is used and tagged "flat".
+const RELAY_DEFS = [
+  { name: '200 Free Relay',   legs: ['50 FS', '50 FS', '50 FS', '50 FS'],     medley: false },
+  { name: '400 Free Relay',   legs: ['100 FS', '100 FS', '100 FS', '100 FS'], medley: false },
+  { name: '800 Free Relay',   legs: ['200 FS', '200 FS', '200 FS', '200 FS'], medley: false },
+  { name: '200 Medley Relay', legs: ['50 BK', '50 BR', '50 FL', '50 FS'],     medley: true },
+  { name: '400 Medley Relay', legs: ['100 BK', '100 BR', '100 FL', '100 FS'], medley: true },
+];
+const RELAY_LETTERS = ['A', 'B', 'C', 'D', 'E'];
+let _rl = { gender: 'W', count: 3, mode: 'best', code: 'all', season: null };
+let _rlManual = {};      // relayName -> [ [sid x4] per relay ] after a hand edit
+let _rlLast = {};        // relayName -> { relays, bank } as last rendered
+
+function setRL(k, v, el) {
+  _rl[k] = v; _rlManual = {};
+  if (el) { el.parentNode.querySelectorAll('.fpill').forEach(p => p.classList.remove('act')); el.classList.add('act'); }
+  renderRelays();
+}
+
+// best times in seconds per swimmer: bank[sid]['ind|50 FS'] = {sec, swim}
+function relayBank(gender) {
+  ensureState();
+  const bank = {};
+  (R.swims || []).forEach(s => {
+    const sw = R.swimmers[s.sid];
+    if (!sw || sw.gender !== gender || !isActive(sw)) return;
+    if (seasonOf(s.date) !== _rl.season) return;
+    if (_rl.code !== 'all' && s.code !== _rl.code) return;
+    if (isDive(s.event)) return;
+    const k = s.kind + '|' + s.event, sec = timeToSec(s.time);
+    const b = (bank[s.sid] = bank[s.sid] || {});
+    if (!b[k] || sec < b[k].sec) b[k] = { sec, swim: s };
+  });
+  return bank;
+}
+
+// time for one leg: {sec, tag}
+function legTime(bank, sid, ev, lead) {
+  const b = bank[sid] || {};
+  if (lead) return b['ind|' + ev] ? { sec: b['ind|' + ev].sec, tag: b['ind|' + ev].swim.lo ? 'LO' : '' } : null;
+  if (b['split|' + ev]) return { sec: b['split|' + ev].sec, tag: 'split' };
+  if (b['ind|' + ev]) return { sec: b['ind|' + ev].sec, tag: 'flat' };
+  return null;
+}
+
+// Free relay: given 4 swimmers, put the one that gains most at lead-off
+function arrangeFree(bank, def, sids) {
+  let best = null;
+  sids.forEach(L => {
+    const lt = legTime(bank, L, def.legs[0], true);
+    if (!lt) return;
+    const rest = sids.filter(x => x !== L).map(x => ({ sid: x, t: legTime(bank, x, def.legs[1], false) }));
+    if (rest.some(r => !r.t)) return;
+    rest.sort((a, b) => a.t.sec - b.t.sec);
+    const total = lt.sec + rest.reduce((a, r) => a + r.t.sec, 0);
+    if (!best || total < best.total) best = { total, order: [L, ...rest.map(r => r.sid)] };
+  });
+  return best;
+}
+
+function relayTotal(bank, def, order) {
+  let total = 0;
+  for (let i = 0; i < 4; i++) {
+    if (!order[i]) return null;
+    const t = legTime(bank, order[i], def.legs[i], i === 0);
+    if (!t) return null;
+    total += t.sec;
+  }
+  return total;
+}
+
+// Fastest single relay from the swimmers in `pool`
+function bestRelay(bank, def, pool) {
+  if (!def.medley) {
+    // try each lead-off with the 3 fastest remaining split swimmers
+    const splitRank = pool.map(sid => ({ sid, t: legTime(bank, sid, def.legs[1], false) })).filter(x => x.t).sort((a, b) => a.t.sec - b.t.sec);
+    let best = null;
+    pool.forEach(L => {
+      const lt = legTime(bank, L, def.legs[0], true);
+      if (!lt) return;
+      const others = splitRank.filter(x => x.sid !== L).slice(0, 3);
+      if (others.length < 3) return;
+      const total = lt.sec + others.reduce((a, x) => a + x.t.sec, 0);
+      if (!best || total < best.total) best = { total, order: [L, ...others.map(x => x.sid)] };
+    });
+    return best;
+  }
+  // medley: brute force over the top candidates for each stroke
+  const cand = def.legs.map((ev, i) => pool.map(sid => ({ sid, t: legTime(bank, sid, ev, i === 0) }))
+    .filter(x => x.t).sort((a, b) => a.t.sec - b.t.sec).slice(0, 8));
+  let best = null;
+  for (const a of cand[0]) for (const b of cand[1]) { if (b.sid === a.sid) continue;
+    for (const c of cand[2]) { if (c.sid === a.sid || c.sid === b.sid) continue;
+      for (const d of cand[3]) { if (d.sid === a.sid || d.sid === b.sid || d.sid === c.sid) continue;
+        const total = a.t.sec + b.t.sec + c.t.sec + d.t.sec;
+        if (!best || total < best.total) best = { total, order: [a.sid, b.sid, c.sid, d.sid] };
+  } } }
+  return best;
+}
+
+// A, B, C... each the fastest possible from who is left
+function buildBest(bank, def, n) {
+  let pool = Object.keys(bank);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const r = bestRelay(bank, def, pool);
+    if (!r) break;
+    out.push(r.order);
+    pool = pool.filter(s => !r.order.includes(s));
+  }
+  return out;
+}
+
+// Even: same swimmers as A..n, swapped between relays until totals are as close as possible
+function buildEven(bank, def, n) {
+  const relays = buildBest(bank, def, n);
+  if (relays.length < 2) return relays;
+  const tot = r => def.medley ? relayTotal(bank, def, r) : (arrangeFree(bank, def, r) || {}).total;
+  const fix = r => def.medley ? r : arrangeFree(bank, def, r).order;
+  const score = rs => { const t = rs.map(tot); return Math.max(...t) - Math.min(...t); };
+  let cur = relays.map(fix), curScore = score(cur), improved = true, guard = 0;
+  while (improved && guard++ < 200) {
+    improved = false;
+    for (let i = 0; i < cur.length; i++) for (let j = i + 1; j < cur.length; j++)
+      for (let p = 0; p < 4; p++) for (let q = 0; q < 4; q++) {
+        if (def.medley && p !== q) continue;            // medley: swap like-for-like strokes
+        const a = cur[i].slice(), b = cur[j].slice();
+        [a[p], b[q]] = [b[q], a[p]];
+        if (def.medley && (relayTotal(bank, def, a) == null || relayTotal(bank, def, b) == null)) continue;
+        if (!def.medley && (!arrangeFree(bank, def, a) || !arrangeFree(bank, def, b))) continue;
+        const next = cur.slice(); next[i] = fix(a); next[j] = fix(b);
+        const s = score(next);
+        if (s < curScore - 0.001) { cur = next; curScore = s; improved = true; }
+      }
+  }
+  return cur;
+}
+
+function relayLegSelect(defIdx, ri, leg, sid, bank, def) {
+  const used = new Set(((_rlLast[def.name] || {}).relays || []).flat());
+  const opts = Object.keys(bank).map(x => ({ x, t: legTime(bank, x, def.legs[leg], leg === 0) })).filter(o => o.t)
+    .sort((a, b) => a.t.sec - b.t.sec)
+    .map(o => { const s = R.swimmers[o.x];
+      return `<option value="${o.x}" ${o.x === sid ? 'selected' : ''}>${esc(s.last)}, ${esc(s.first)} ${secToTime(o.t.sec)}${o.t.tag === 'flat' ? ' (flat)' : ''}${used.has(o.x) && o.x !== sid ? ' •' : ''}</option>`; }).join('');
+  return `<select style="font-size:.75rem" onchange="setRelayLeg(${defIdx},${ri},${leg},this.value)"><option value="">— open —</option>${opts}</select>`;
+}
+
+function setRelayLeg(defIdx, ri, leg, sid) {
+  const def = RELAY_DEFS[defIdx];
+  const rel = (_rlManual[def.name] = (_rlManual[def.name] || (_rlLast[def.name].relays).map(r => r.slice())));
+  while (rel.length <= ri) rel.push([null, null, null, null]);
+  // a swimmer can only be on one relay of this event: swap them out of their old spot
+  rel.forEach((r, i) => r.forEach((x, l) => { if (x === sid && !(i === ri && l === leg)) r[l] = rel[ri][leg]; }));
+  rel[ri][leg] = sid || null;
+  renderRelays();
+}
+
 function renderRelays() {
-  const gender = document.getElementById('relayGender').value;
-  const swimmers = Object.values(R.swimmers).filter(s=>s.gender===gender && isActive(s));
+  ensureState();
+  const seasons = [...new Set(R.swims.map(s => seasonOf(s.date)))].sort().reverse();
+  const sel = document.getElementById('relaySeason');
+  if (!seasons.length) {
+    sel.innerHTML = '';
+    document.getElementById('relayGrid').innerHTML = '<div style="color:var(--text-dim);font-size:.82rem">No times yet — import meet results or Team Manager reports on the Times tab.</div>';
+    return;
+  }
+  if (!_rl.season || !seasons.includes(_rl.season)) _rl.season = seasons[0];
+  sel.innerHTML = seasons.map(s => `<option ${s === _rl.season ? 'selected' : ''}>${s}</option>`).join('');
+
+  const bank = relayBank(_rl.gender);
   let h = '';
-
-  const relays = ['200 FR Relay','400 FR Relay','800 FR Relay','200 MR Relay','400 MR Relay'];
-  relays.forEach(relay => {
-    const info = RELAY_LEGS[relay];
-    // Get candidates with relevant times
-    let candidates = [];
-    if (relay.includes('MR')) {
-      ['BK','BR','FL','FS'].forEach((stroke, leg) => {
-        const evMap = {BK:'100 BK',BR:'100 BR',FL:'100 FL',FS:'100 FS'};
-        const ev = evMap[stroke];
-        const pool = swimmers.map(s => {
-          const t = (s.times||{})[ev];
-          return { s, ev, time: t?.sbt||t?.lbt||null };
-        }).filter(x=>x.time).sort((a,b)=>timeToSec(a.time)-timeToSec(b.time));
-        candidates.push({ stroke, ev, pool, best: pool[0] });
+  RELAY_DEFS.forEach((def, di) => {
+    const relays = _rlManual[def.name] || (_rl.mode === 'even' ? buildEven(bank, def, _rl.count) : buildBest(bank, def, _rl.count));
+    _rlLast[def.name] = { relays };
+    const totals = relays.map(r => relayTotal(bank, def, r));
+    const valid = totals.filter(t => t != null);
+    const spread = valid.length > 1 ? Math.max(...valid) - Math.min(...valid) : null;
+    h += `<div class="card"><div class="ct" style="display:flex;justify-content:space-between"><span>${def.name}</span>${
+      spread != null ? `<span>spread ${spread.toFixed(2)}s</span>` : ''}</div>`;
+    if (!relays.length) h += '<div style="font-size:.78rem;color:var(--text-dim)">Not enough swimmers with times.</div>';
+    relays.forEach((r, ri) => {
+      h += `<div style="display:flex;justify-content:space-between;align-items:center;margin:.6rem 0 .3rem">
+        <span style="font-family:var(--fm);font-weight:700;color:var(--gold)">${RELAY_LETTERS[ri]}</span>
+        <span style="font-family:var(--fm);font-weight:700">${totals[ri] != null ? secToTime(totals[ri]) : '—'}</span></div>`;
+      r.forEach((sid, leg) => {
+        const t = sid ? legTime(bank, sid, def.legs[leg], leg === 0) : null;
+        h += `<div class="relay-lane"><span class="lane-num">${leg + 1}</span>
+          <div>${relayLegSelect(di, ri, leg, sid, bank, def)}
+            <div style="font-size:.65rem;color:var(--text-dim);font-family:var(--fm);margin-top:.2rem">${def.legs[leg]}${leg === 0 ? ' · lead-off' : ''}</div></div>
+          <span style="font-family:var(--fm);font-size:.78rem;color:${t ? (t.tag === 'flat' ? 'var(--gold)' : 'var(--green)') : 'var(--text-dim)'}">${t ? secToTime(t.sec) : '—'}</span>
+          <span style="font-size:.6rem;font-family:var(--fm);color:var(--text-dim);width:2.2rem;text-align:right">${t ? (t.tag === 'flat' && leg ? 'flat' : t.tag === 'LO' ? 'LO' : '') : ''}</span>
+        </div>`;
       });
-    } else {
-      const evMap = {50:'50 FS',100:'100 FS',200:'200 FS'};
-      const ev = evMap[info.dist];
-      const pool = swimmers.map(s => {
-        const t = (s.times||{})[ev];
-        return { s, ev, time: t?.sbt||t?.lbt||null };
-      }).filter(x=>x.time).sort((a,b)=>timeToSec(a.time)-timeToSec(b.time));
-      for (let i=0;i<4;i++) candidates.push({stroke:'FS', ev, pool, best: pool[i]||null});
-    }
-
-    // Projected time
-    const total = candidates.reduce((sum,c)=>sum+(c.best?timeToSec(c.best.time):0),0);
-    const projected = total > 0 ? secToTime(total) : '—';
-
-    h += `<div class="card"><div class="ct">${relay}</div>`;
-    h += `<div style="margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between"><span style="font-size:.78rem;color:var(--text-dim)">Projected</span><span style="font-family:var(--fm);font-size:.9rem;color:var(--gold);font-weight:700">${projected}</span></div>`;
-    candidates.forEach((c, i) => {
-      const stroke = relay.includes('MR') ? ['BK','BR','FL','FS'][i] : 'FS';
-      const name = c.best ? `${c.best.s.first} ${c.best.s.last}` : '— open —';
-      const time = c.best ? c.best.time : '';
-      const opts = '<option value="">— open —</option>' + (c.pool||[]).map(p =>
-        `<option value="${esc(p.s.id)}" ${c.best&&p.s.id===c.best.s.id?'selected':''}>${esc(p.s.last)}, ${esc(p.s.first)} (${p.time})</option>`
-      ).join('');
-      h += `<div class="relay-lane">
-        <span class="lane-num">${i+1}</span>
-        <div>
-          <select style="font-size:.75rem" onchange="updateRelay()">${opts}</select>
-          <div style="font-size:.65rem;color:var(--text-dim);font-family:var(--fm);margin-top:.2rem">${stroke} · ${c.ev||''}</div>
-        </div>
-        <span style="font-family:var(--fm);font-size:.78rem;color:${time?'var(--green)':'var(--text-dim)'};">${time||'—'}</span>
-      </div>`;
     });
     h += '</div>';
   });
-  document.getElementById('relayGrid').innerHTML = h || '<div style="color:var(--text-dim)">No swimmers with times yet.</div>';
+  document.getElementById('relayGrid').innerHTML = h;
+  document.getElementById('relayManualNote').style.display = Object.keys(_rlManual).length ? 'block' : 'none';
 }
-
-function updateRelay() { renderRelays(); }
 
 // ── UTILITIES ─────────────────────────────────────────────────────────────
 function timeToSec(t) {
