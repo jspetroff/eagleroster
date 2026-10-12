@@ -436,13 +436,17 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div class="fpill" data-v="split" onclick="setTT('kind','split',this)">Relay Splits</div>
   </div>
   <div class="fbar" id="ttCodeBar">
-    <div class="fpill act" data-v="all" onclick="setTT('code','all',this)">All codes</div>
-    <div class="fpill" data-v="U" onclick="setTT('code','U',this)">U</div>
-    <div class="fpill" data-v="UwS" onclick="setTT('code','UwS',this)">UwS</div>
-    <div class="fpill" data-v="S" onclick="setTT('code','S',this)">S</div>
+    <span style="font-size:.7rem;color:var(--text-dim);font-family:var(--fm);align-self:center">Codes:</span>
+    <div class="fpill act" data-v="U" onclick="toggleTTCode('U',this)">U</div>
+    <div class="fpill act" data-v="UwS" onclick="toggleTTCode('UwS',this)">UwS</div>
+    <div class="fpill act" data-v="S" onclick="toggleTTCode('S',this)">S</div>
+  </div>
+  <div class="fbar" id="ttAllBar">
+    <div class="fpill act" data-v="best" onclick="setTT('all',false,this)">Best per athlete</div>
+    <div class="fpill" data-v="all" onclick="setTT('all',true,this)">All swims this season</div>
   </div>
   <div id="ttPrint" class="print-only"></div>
-  <div id="ttHelp" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Best swim per athlete per event. Codes: U = unrested · UwS = unrested, suited · S = shaved. <span class="badge lo">LO</span> = relay lead-off.</div>
+  <div id="ttHelp" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Codes (click to turn each on/off): U = unrested · UwS = unrested, suited · S = shaved. <span class="badge lo">LO</span> = relay lead-off.</div>
   <div class="tt-grid" id="ttList"></div>
 </div>
 
@@ -1353,9 +1357,16 @@ function renderMeetHistory() {
 }
 
 // ── TOP TIMES VIEW ────────────────────────────────────────────────────────
-let _tt = { gender: 'W', kind: 'ind', season: null, view: 'event', code: 'all' };
+let _tt = { gender: 'W', kind: 'ind', season: null, view: 'event', codes: new Set(REST_CODES), all: false };
 
 function seasonOf(date) { const y = +date.slice(0,4), m = +date.slice(5,7); const s = m >= 8 ? y : y - 1; return `${s}-${String(s+1).slice(2)}`; }
+
+function toggleTTCode(c, el) {
+  if (_tt.codes.has(c)) { if (_tt.codes.size === 1) return; _tt.codes.delete(c); el.classList.remove('act'); }
+  else { _tt.codes.add(c); el.classList.add('act'); }
+  renderTopTimes();
+}
+const ttCodesFiltered = () => _tt.codes.size < REST_CODES.length;
 
 function setTT(k, v, el) {
   _tt[k] = v;
@@ -1371,7 +1382,7 @@ function setSwimCode(id, code, el) {
   el.className = 'code-sel no-print code-' + code;
   if (el.previousElementSibling) el.previousElementSibling.textContent = code;
   save();
-  if (_tt.code !== 'all') renderTopTimes();   // swim may no longer belong in the filtered list
+  if (ttCodesFiltered()) renderTopTimes();   // swim may no longer belong in the filtered list
 }
 
 // Compact paper layout: meets listed once with a date key, three columns of one-line rows
@@ -1383,7 +1394,7 @@ function printTopTimes() {
   // Short meet name for the line: drop year/season tags ("2026-2027 GT vs Emory" -> "GT vs Emory")
   const sm = m => esc((m || '').replace(/\b(19|20)\d\d(\s*[-–\/]\s*(19|20)?\d\d)?\b/g, ' ').replace(/\s+/g, ' ').trim() || m);
   const mt = s => `<td class="mt" title="${esc(s.meet)}">${sm(s.meet)} <span class="pc">${md(s.date)}</span></td>`;
-  const codeTxt = { all: 'All codes', U: 'U only (unrested)', UwS: 'UwS only (unrested, suited)', S: 'S only (shaved)' }[_tt.code];
+  const codeTxt = (ttCodesFiltered() ? 'Codes: ' + [..._tt.codes].join(' + ') : 'All codes') + (_tt.all ? ' · all swims' : ' · best per athlete');
   const used = {};
   events.forEach(ev => Object.values(byEvent[ev]).forEach(s => used[s.date + '|' + s.meet] = s));
   const meets = Object.values(used).sort((a,b) => a.date.localeCompare(b.date))
@@ -1395,12 +1406,12 @@ function printTopTimes() {
     const rankOf = {}, people = {};
     events.forEach(ev => {
       const rows = Object.values(byEvent[ev]).sort(ttSort(ev));
-      rows.forEach(s => { rankOf[s.sid+'|'+ev] = rows.findIndex(x => x.time === s.time) + 1; (people[s.sid] = people[s.sid] || []).push(s); });
+      rows.forEach(s => { rankOf[s.id] = rows.findIndex(x => x.time === s.time) + 1; (people[s.sid] = people[s.sid] || []).push(s); });
     });
     Object.keys(people).sort((a,b) => (R.swimmers[a].last+R.swimmers[a].first).localeCompare(R.swimmers[b].last+R.swimmers[b].first)).forEach(sid => {
       const sw = R.swimmers[sid];
       body += `<table class="pt"><tr><th colspan="5">${nm(sw)} <span class="pc">${classOf(sw)||''}</span></th></tr>` +
-        people[sid].map(s => `<tr><td>${esc(s.event)}</td><td class="r">${esc(s.time)}${lo(s)}</td><td>${s.code}</td>${mt(s)}<td class="r">#${rankOf[sid+'|'+s.event]}</td></tr>`).join('') + '</table>';
+        people[sid].map(s => `<tr><td>${esc(s.event)}</td><td class="r">${esc(s.time)}${lo(s)}</td><td>${s.code}</td>${mt(s)}<td class="r">#${rankOf[s.id]}</td></tr>`).join('') + '</table>';
     });
   } else {
     events.forEach(ev => {
@@ -1428,10 +1439,10 @@ function renderTopTimesByName(byEvent, events) {
   const rankOf = {};   // sid|event -> team rank (ties share a rank)
   events.forEach(ev => {
     const rows = Object.values(byEvent[ev]).sort(ttSort(ev));
-    rows.forEach(s => { rankOf[s.sid + '|' + ev] = rows.findIndex(x => x.time === s.time) + 1; });
+    rows.forEach(s => { rankOf[s.id] = rows.findIndex(x => x.time === s.time) + 1; });
   });
   const people = {};
-  events.forEach(ev => Object.values(byEvent[ev]).forEach(s => (people[s.sid] = people[s.sid] || []).push(s)));
+  events.forEach(ev => Object.values(byEvent[ev]).sort(ttSort(ev)).forEach(s => (people[s.sid] = people[s.sid] || []).push(s)));
   const sids = Object.keys(people).sort((a,b) => {
     const A = R.swimmers[a], B = R.swimmers[b];
     return (A.last+A.first).localeCompare(B.last+B.first);
@@ -1447,7 +1458,7 @@ function renderTopTimesByName(byEvent, events) {
         <td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(s.event)}</td>
         <td><div class="tt-meet">${esc(s.meet)} · ${s.date}</div></td>
         <td class="ttime" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.lo?'<span class="badge lo">LO</span>':''}</td>
-        <td class="tt-rank" style="text-align:right" title="Team rank in this event">#${rankOf[sid+'|'+s.event]}</td>
+        <td class="tt-rank" style="text-align:right" title="Team rank in this event">#${rankOf[s.id]}</td>
         <td style="width:4.5rem;text-align:right">${ttCodeSel(s)}</td>
       </tr>`;
     });
@@ -1467,10 +1478,11 @@ function renderTopTimes() {
   _tt.season = sel.value;
 
   const pool = R.swims.filter(s => s.kind === _tt.kind && seasonOf(s.date) === _tt.season &&
-    (_tt.code === 'all' || s.code === _tt.code) &&
+    _tt.codes.has(s.code) &&
     R.swimmers[s.sid] && R.swimmers[s.sid].gender === _tt.gender);
   const byEvent = {};
   pool.forEach(s => {
+    if (_tt.all) { (byEvent[s.event] = byEvent[s.event] || []).push(s); return; }
     const best = (byEvent[s.event] = byEvent[s.event] || {});
     const cur = best[s.sid];
     const faster = !cur || (isDive(s.event) ? parseFloat(s.time) > parseFloat(cur.time) : timeToSec(s.time) < timeToSec(cur.time));
