@@ -8,6 +8,8 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, doc, setDoc, getDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getAuth, signInWithPopup, signOut, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  const AUTHORIZED_EMAIL = "jspetroff@gmail.com";
   const cfg = {
     apiKey:"AIzaSyALXznGsNQaeNOGmwG5EHOa0XONWy6EZfA",
     authDomain:"swimscore-60e16.firebaseapp.com",
@@ -18,8 +20,30 @@
   };
   const app = initializeApp(cfg);
   const db = getFirestore(app);
-  window._db=db; window._fsDoc=doc; window._fsSet=setDoc; window._fsGet=getDoc; window._fsSnap=onSnapshot; window._fsDel=deleteDoc; window._fbReady=true;
-  document.dispatchEvent(new Event('firebase-ready'));
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+  window._db=db; window._fsDoc=doc; window._fsSet=setDoc; window._fsGet=getDoc; window._fsSnap=onSnapshot; window._fsDel=deleteDoc;
+  window._signIn = () => signInWithPopup(auth, provider).catch(e => {
+    document.getElementById('loginMsg').textContent = 'Sign-in failed: ' + (e.code || e.message);
+  });
+  window._signOut = () => signOut(auth);
+
+  // Same gate as SwimScore: only the authorized Google account sees the app
+  onAuthStateChanged(auth, user => {
+    const login = document.getElementById('loginScreen'), root = document.getElementById('appRoot');
+    if (user && user.email === AUTHORIZED_EMAIL) {
+      login.style.display = 'none'; root.style.display = 'block';
+      const em = document.getElementById('userEmail'); if (em) em.textContent = user.email;
+      if (!window._fbReady) { window._fbReady = true; document.dispatchEvent(new Event('firebase-ready')); }
+    } else if (user) {
+      login.style.display = 'flex'; root.style.display = 'none';
+      document.getElementById('loginMsg').textContent = user.email + ' is not authorized. Sign in with ' + AUTHORIZED_EMAIL + '.';
+      signOut(auth);
+    } else {
+      login.style.display = 'flex'; root.style.display = 'none';
+      document.getElementById('loginMsg').textContent = '';
+    }
+  });
 </script>
 <!-- PDF reading for Team Manager top-times reports -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -149,14 +173,41 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .tt-meet{font-size:.72rem;color:var(--text-dim);}
 .imp-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.4rem 0;border-bottom:1px solid rgba(42,48,69,.4);font-size:.8rem;}
 .imp-row select{width:auto;max-width:230px;font-size:.75rem;padding:.25rem .4rem;}
+/* Login */
+#loginScreen{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;padding:2rem;}
+.login-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:2.5rem;text-align:center;max-width:360px;width:100%;}
+.login-logo{font-family:var(--fm);font-size:1.4rem;font-weight:700;color:var(--gold);letter-spacing:.08em;margin-bottom:.5rem;}
+.login-logo span{color:var(--text-dim);}
+.login-sub{font-size:.82rem;color:var(--text-dim);margin-bottom:2rem;}
+.login-btn{display:flex;align-items:center;justify-content:center;gap:.75rem;background:#fff;color:#1f1f1f;border:none;border-radius:8px;padding:.75rem 1.5rem;font-size:.88rem;font-weight:600;cursor:pointer;width:100%;}
+/* Phone */
+.tabs{overflow-x:auto;scrollbar-width:none;}
+.tab{white-space:nowrap;}
+@media(max-width:700px){.hide-sm{display:none;}.hdr{padding:.6rem 1rem;flex-wrap:wrap;}.content{padding:1rem;}.tabs{padding:.5rem 1rem .25rem;}}
 </style>
 </head>
 <body>
+
+<div id="loginScreen" style="display:flex">
+  <div class="login-card">
+    <div class="login-logo">&#9652; EAGLE<span>ROSTER</span></div>
+    <div class="login-sub">Emory Swimming &amp; Diving</div>
+    <button class="login-btn" onclick="window._signIn()">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/><path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/><path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z"/><path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.31z"/></svg>
+      Sign in with Google
+    </button>
+    <div id="loginMsg" style="margin-top:1rem;font-size:.78rem;color:var(--red)"></div>
+  </div>
+</div>
+<!-- App (hidden until signed in) -->
+<div id="appRoot" style="display:none">
 
 <div class="hdr">
   <div class="logo">&#9652; EAGLE<span>ROSTER</span></div>
   <div style="font-size:.72rem;color:var(--text-dim);font-family:var(--fm)" id="rosterMeta">Loading...</div>
   <div class="sync-bar"><span class="sync-dot sync-wait" id="syncDot"></span><span id="syncMsg">Connecting...</span></div>
+  <span id="userEmail" class="hide-sm" style="font-size:.65rem;color:var(--text-dim);font-family:var(--fm)"></span>
+  <button onclick="window._signOut()" style="background:none;border:1px solid var(--border);color:var(--text-dim);font-size:.65rem;font-family:var(--fm);padding:.2rem .5rem;border-radius:4px;cursor:pointer" title="Sign out">&#x2192; Sign out</button>
 </div>
 
 <div class="tabs">
@@ -380,6 +431,8 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   </div>
 </div>
 
+</div><!-- /appRoot -->
+
 <script>
 // ── CONSTANTS ─────────────────────────────────────────────────────────────
 const EVENTS_IND = [
@@ -440,14 +493,9 @@ function cloudListen() {
 }
 
 function tryConnect() {
-  if (window._fbReady) {
-    cloudListen();
-  } else if (_fbAttempts++ < 50) {
-    setTimeout(tryConnect, 200);
-  } else {
-    setSync('err', 'Offline');
-    renderAll();
-  }
+  // Firebase becomes ready only after Google sign-in, which can take any amount of time
+  if (window._fbReady) cloudListen();
+  else document.addEventListener('firebase-ready', cloudListen, { once: true });
 }
 
 // ── SAVE (local + cloud) ──────────────────────────────────────────────────
