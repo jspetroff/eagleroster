@@ -248,7 +248,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div>
       <div class="card">
         <div class="ct">Import Team Manager Top Times</div>
-        <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:1rem">Drop Team Manager <b>Individual Top Times</b> and <b>Relay Legs Only</b> PDF reports (men's and women's, several at once is fine). Re-importing a report that overlaps an earlier one won't create duplicates.</p>
+        <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:1rem">Drop Team Manager <b>Individual Top Times</b> (by event or by name) and <b>Relay Legs Only</b> PDF reports — men's and women's, several at once is fine. Re-importing a report that overlaps an earlier one won't create duplicates.</p>
         <div class="dropzone" id="dropzone" onclick="document.getElementById('resultsFile').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleFileDrop(event)">
           <div class="ico">&#128196;</div>
           <div style="font-size:.85rem;font-weight:600;margin-bottom:.35rem">Drop top-times PDFs here</div>
@@ -841,9 +841,13 @@ function tmEventName(raw) {
 
 const TM_ROW = /^(\d+)\*?\s+([\d:.]+)\s+(?:([YLS])\s+)?(?:([A-Z])\s+)?([PFS])\s+(.+?)\s+(FR|SO|JR|SR|GR|GS|5Y|6Y|\d{1,2})\s+(.+?)\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+(.+)$/;
 
+// "By name" layout: athlete header line, then that athlete's swims (every swim, not just bests)
+const TM_ATHLETE = /^(.+?)\s+(?:\((\d+)\)\s+)?([MW])\s+\(Yr:\s*([A-Z0-9]+)\)\s*(.*)$/;
+const TM_NAME_ROW = /^([\d:.]+)\s+(?:([YLS])\s+)?(?:([A-Z])\s+)?([PFS])\s+(\d+\s+(?:Free|Back|Breast|Fly|IM)|\d+\s+Meter\s+\d+\s+Dives|Platform\b.*?)\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+(.+)$/;
+
 function tmParseLines(lines) {
   const out = { kind: null, rows: [], warnings: [] };
-  let gender = null, event = null, pending = null;
+  let gender = null, event = null, pending = null, athlete = null;
 
   const finish = (text) => {
     const m = text.match(TM_ROW);
@@ -866,6 +870,26 @@ function tmParseLines(lines) {
     if (/Relay Legs Only/i.test(line)) { out.kind = 'split'; continue; }
     if (/^Individual Top Times$/i.test(line)) { if (!out.kind) out.kind = 'ind'; continue; }
     if (/^(Licensed To|Emory University Swimming|Times since|Number of Top Times|Time P\/F\/S)/i.test(line)) continue;
+    const a = line.match(TM_ATHLETE);
+    if (a) {
+      if (pending) { finish(pending); pending = null; }
+      athlete = { name: a[1].trim(), gender: a[3] === 'M' ? 'M' : 'W',
+        year: /^(FR|SO|JR|SR|GR|GS|5Y|6Y)$/.test(a[4]) ? a[4] : '', team: a[5].trim() };
+      continue;
+    }
+    if (athlete) {
+      const r = line.match(TM_NAME_ROW);
+      if (r) {
+        const ev = tmEventName(r[5].replace(/\s+/g, ' ').trim());
+        if (!ev) { out.warnings.push('Unknown event skipped: ' + r[5]); continue; }
+        const [mo, d, y] = r[6].split('/');
+        out.rows.push({ gender: athlete.gender, event: ev, time: r[1], leadoff: r[3] === 'L',
+          name: athlete.name, year: athlete.year, team: athlete.team,
+          date: `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`, meet: r[7].trim() });
+        continue;
+      }
+      if (/^[\d:.]+\s/.test(line)) { out.warnings.push('Could not read: ' + line); continue; }
+    }
     const h = line.match(/^(Men|Women)\s+\S+\s+(\d+\s+.+)$/);
     if (h && !/\d{1,2}\/\d{1,2}\/\d{4}/.test(line)) {
       if (pending) { finish(pending); pending = null; }
