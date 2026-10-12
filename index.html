@@ -1263,6 +1263,24 @@ function applyImport() {
     (dupes ? ` · ${dupes} already in EagleRoster` : '') + (skipped ? ` · ${skipped} skipped` : ''), 'ok');
 }
 
+// Recode a whole meet: the meet's default code and every swim from it (including any changed one by one)
+function setMeetCode(i, el) {
+  const m = (R.meets || [])[i];
+  if (!m || !m.key) return;
+  const code = el.value;
+  const swims = (R.swims || []).filter(s => s.mkey === m.key || (s.date === m.date && s.meet === m.name));
+  const odd = swims.filter(s => s.code !== m.code).length;
+  if (odd && !confirm(`Set all ${swims.length} swims from ${m.name} to ${code}? ${odd} of them were changed individually and will be reset too.`)) {
+    el.value = m.code; return;
+  }
+  swims.forEach(s => { s.code = code; });
+  m.code = code; R.meetCodes[m.key] = code;
+  el.className = 'code-sel code-' + code;
+  save();
+  showParseStatus(`✓ ${m.name}: ${swims.length} swims set to ${code}`, 'ok');
+  if (document.getElementById('tab-toptimes').classList.contains('act')) renderTopTimes();
+}
+
 function showParseStatus(msg, type) {
   document.getElementById('parseStatus').innerHTML = msg ? `<div class="st st${type}" style="margin-top:.75rem">${msg}</div>` : '';
 }
@@ -1271,10 +1289,12 @@ function renderMeetHistory() {
   const meets = R.meets || [];
   if (!meets.length) { document.getElementById('meetHistory').innerHTML = '<div style="color:var(--text-dim);font-size:.82rem">No meets imported yet.</div>'; return; }
   let h = '';
-  meets.forEach(m => {
+  meets.forEach((m, i) => {
+    const code = m.code || (m.key && R.meetCodes && R.meetCodes[m.key]) || '';
     h += `<div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border)">
       <div><div style="font-size:.82rem;font-weight:600">${esc(m.name)}</div><div style="font-size:.7rem;color:var(--text-dim);font-family:var(--fm)">${m.date} · ${m.count} results</div></div>
-      ${m.code ? `<span class="badge code-${m.code}" style="background:var(--bg3)">${m.code}</span>` : ''}
+      ${m.key ? `<select class="code-sel code-${code}" title="Rest code for every swim at this meet" onchange="setMeetCode(${i}, this)">${
+        REST_CODES.map(c => `<option ${c===code?'selected':''}>${c}</option>`).join('')}</select>` : ''}
     </div>`;
   });
   document.getElementById('meetHistory').innerHTML = h;
