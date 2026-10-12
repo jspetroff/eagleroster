@@ -9,7 +9,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, doc, setDoc, getDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   import { getAuth, signInWithPopup, signOut, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  const AUTHORIZED_EMAIL = "jspetroff@gmail.com";
+  const AUTHORIZED_EMAILS = ["jspetroff@gmail.com", "emoryswimminganddiving@gmail.com"];
   const cfg = {
     apiKey:"AIzaSyALXznGsNQaeNOGmwG5EHOa0XONWy6EZfA",
     authDomain:"swimscore-60e16.firebaseapp.com",
@@ -31,13 +31,13 @@
   // Same gate as SwimScore: only the authorized Google account sees the app
   onAuthStateChanged(auth, user => {
     const login = document.getElementById('loginScreen'), root = document.getElementById('appRoot');
-    if (user && user.email === AUTHORIZED_EMAIL) {
+    if (user && AUTHORIZED_EMAILS.includes((user.email || '').toLowerCase())) {
       login.style.display = 'none'; root.style.display = 'block';
       const em = document.getElementById('userEmail'); if (em) em.textContent = user.email;
       if (!window._fbReady) { window._fbReady = true; document.dispatchEvent(new Event('firebase-ready')); }
     } else if (user) {
       login.style.display = 'flex'; root.style.display = 'none';
-      document.getElementById('loginMsg').textContent = user.email + ' is not authorized. Sign in with ' + AUTHORIZED_EMAIL + '.';
+      document.getElementById('loginMsg').textContent = user.email + ' is not authorized for EagleRoster.';
       signOut(auth);
     } else {
       login.style.display = 'flex'; root.style.display = 'none';
