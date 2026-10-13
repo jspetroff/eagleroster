@@ -387,7 +387,8 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
         <p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.75rem">Already built in: SBT from imported meets, LTBT, NCAA A/B cuts and 2026 invite times, and EU varsity records from the Records tab. Paste the rest below, one per line, e.g. <code style="font-family:var(--fm)">W 500 Free,4:52.10</code> (start with W or M; without it the line applies to both).</p>
         <div class="frow f2">
           <div><label>Prior-year NCAA finals (year)</label><input id="finalsYear" type="text" placeholder="2026" oninput="saveReportRef()"></div>
-          <div></div>
+          <div><label>&nbsp;</label><button class="btn" style="width:100%" onclick="document.getElementById('finalsFile').click()">&#8679; Load A/B final cuts from NCAA results</button>
+            <input type="file" id="finalsFile" accept=".zip,.hy3" style="display:none" onchange="loadFinalsCuts(this.files[0]).finally(()=>{this.value=''})"></div>
         </div>
         <div class="frow">
           <div><label>A Final cuts (8th place, prior year)</label><textarea id="aFinalCuts" rows="3" placeholder="W 500 FS,4:52.10&#10;M 500 FS,4:28.39" oninput="saveReportRef()"></textarea></div>
@@ -1744,6 +1745,60 @@ function renderReportEvents() {
   document.getElementById('ncaaRecs').value = ref.ncaaRec || '';
   document.getElementById('finalsYear').value = ref.finalsYear || '';
   checkReportRef();
+}
+
+// NCAA championship results (.zip/.hy3) → A final cut = 8th-fastest prelim, B final = 16th, per gender and event.
+// Timed-final events (no prelims, e.g. the 1650) use the final results. DQs, scratches and no-times are skipped.
+function hy3FinalsCuts(text) {
+  const ST = { A:'FS', B:'BK', C:'BR', D:'FL', E:'IM' }, res = {};
+  let cur = null, meet = '', date = '';
+  text.replace(/\r/g, '').split('\n').forEach(L => {
+    const rec = L.slice(0, 2);
+    if (rec === 'B1') { meet = L.slice(2, 47).trim(); const d = L.slice(47).match(/(\d{8})/); if (d) date = d[1].slice(4, 8); }
+    else if (rec === 'E1') {
+      const st = ST[L[21]], dist = parseInt(L.slice(15, 21), 10);
+      cur = st && dist ? (L[2] === 'F' ? 'W' : 'M') + ' ' + dist + ' ' + st : null;
+    } else if (rec === 'E2' && cur) {
+      const t = parseFloat(L.slice(3, 11)), round = L[2], status = L[12];
+      if (t > 0 && status === ' ') ((res[cur] = res[cur] || {})[round] = (res[cur] || {})[round] || []).push(t);
+    }
+  });
+  const fmt = s => { const m = Math.floor(s / 60), r = (s - m * 60).toFixed(2); return m ? `${m}:${r.padStart(5, '0')}` : r; };
+  const order = ['50 FS','100 FS','200 FS','500 FS','1650 FS','100 BK','200 BK','100 BR','200 BR','100 FL','200 FL','200 IM','400 IM'];
+  const A = [], B = [];
+  ['W', 'M'].forEach(g => order.forEach(ev => {
+    const r = res[g + ' ' + ev]; if (!r) return;
+    const ts = (r.P && r.P.length ? r.P : (r.F || [])).slice().sort((a, b) => a - b);
+    if (ts.length >= 8) A.push(`${g} ${ev},${fmt(ts[7])}`);
+    if (ts.length >= 16) B.push(`${g} ${ev},${fmt(ts[15])}`);
+  }));
+  return { meet, year: date, a: A.join('\n'), b: B.join('\n'), n: A.length };
+}
+
+async function loadFinalsCuts(file) {
+  if (!file) return;
+  const st = document.getElementById('refStatus');
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let text = '';
+    if (/\.zip$/i.test(file.name)) {
+      if (!window.JSZip) throw new Error('Zip reader did not load — check your connection and reload.');
+      const zip = await JSZip.loadAsync(bytes);
+      const hy = Object.values(zip.files).find(z => /\.hy3$/i.test(z.name));
+      if (!hy) throw new Error('No .hy3 results file inside this zip.');
+      text = await hy.async('string');
+    } else text = new TextDecoder('latin1').decode(bytes);
+    const r = hy3FinalsCuts(text);
+    if (!r.n) throw new Error('No prelim results found in this file.');
+    if (!/ncaa|championship/i.test(r.meet) && !confirm(`This file is "${r.meet}". Use it for the A/B final cuts anyway?`)) return;
+    document.getElementById('aFinalCuts').value = r.a;
+    document.getElementById('bFinalCuts').value = r.b;
+    if (r.year) document.getElementById('finalsYear').value = r.year;
+    saveReportRef();
+    st.insertAdjacentHTML('afterbegin', `<div class="st stok">✓ Loaded ${r.n} A-final and B-final cuts from ${esc(r.meet)} ${esc(r.year)} (8th / 16th prelim times).</div>`);
+  } catch (e) {
+    st.insertAdjacentHTML('afterbegin', `<div class="st sterr">${esc(e.message)}</div>`);
+  }
 }
 
 // Save reference data as it's typed (debounced) and show what was understood
