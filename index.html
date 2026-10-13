@@ -167,6 +167,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .code-UwS{color:var(--blue);}
 .code-S{color:var(--gold);}
 .badge.lo{background:rgba(92,155,224,.12);color:var(--blue);margin-left:.35rem;}
+.badge.pbb{background:var(--gold);color:#0f1117;margin-left:.35rem;}
 /* Top times */
 .tt-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));}
 @media(max-width:700px){.tt-grid{grid-template-columns:1fr;}}
@@ -197,6 +198,8 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   table.pt td.mt{width:48%;overflow:hidden;text-overflow:ellipsis;max-width:0;font-size:8px;color:#222;}
   table.pt .r{text-align:right;} table.pt .pc{color:#555;font-size:7.5px;font-weight:normal;}
   table.pt sup{font-size:6px;}
+  table.pt td.pbt{font-weight:800;}
+  .pbm{display:inline-block;font-size:6.5px;font-weight:800;border:1px solid #000;border-radius:2px;padding:0 1.5px;margin-left:2px;line-height:1.1;vertical-align:1px;}
   .card{break-inside:avoid;border:1px solid #999;border-radius:4px;padding:5px 7px;margin:0 0 8px;}
   .card+.card{margin-top:0;}
   .ct{color:#000;margin-bottom:3px;font-weight:700;}
@@ -447,7 +450,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div class="fpill" data-v="all" onclick="setTT('all',true,this)">All swims this season</div>
   </div>
   <div id="ttPrint" class="print-only"></div>
-  <div id="ttHelp" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Codes (click to turn each on/off): U = unrested · UwS = unrested, suited · S = shaved. <span class="badge lo">LO</span> = relay lead-off.</div>
+  <div id="ttHelp" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Codes (click to turn each on/off): U = unrested · UwS = unrested, suited · S = shaved. <span class="badge pbb">PB</span> = lifetime best · <span class="badge lo">LO</span> = relay lead-off.</div>
   <div class="tt-grid" id="ttList"></div>
 </div>
 
@@ -876,7 +879,40 @@ function ensureState() {
     if (s.year === 'GS' && !s.gs) { s.gs = true; changed = true; }
     if (s.gradYear === undefined) { s.gradYear = null; }
   });
+  if (R.swims.some(s => s.kind === 'ind' && s.pb === undefined)) { backfillPBs(); changed = true; }
   return changed;
+}
+
+// Lifetime-best flags for swims imported before PB tracking existed.
+// A swim is a PB if it set the athlete's all-time best (from SwimCloud + imported swims) at that meet.
+// Swims that were bests when swum but have since been beaten can't be confirmed, so they stay unflagged.
+// Events whose SwimCloud lifetime bests came in with the original roster import
+const SC_EVENTS = ['50 FS','100 FS','200 FS','500 FS','1000 FS','1650 FS','100 BK','200 BK','100 BR','200 BR','100 FL','200 FL','200 IM','400 IM'];
+// Only flag PBs where EagleRoster holds a real lifetime record (SwimCloud), not just this season's swims
+function hasPBBase(sw, ev) {
+  if (!sw || isDive(ev)) return false;
+  const t = (sw.times || {})[ev];
+  return !!((t && t.sc) || (SC_EVENTS.includes(ev) && sw.swimcloudId));
+}
+
+function backfillPBs() {
+  const groups = {};
+  R.swims.filter(s => s.kind === 'ind' && !s.pbImp).forEach(s => (groups[s.sid + '\u0001' + s.event] = groups[s.sid + '\u0001' + s.event] || []).push(s));
+  Object.entries(groups).forEach(([k, swims]) => {
+    const [sid, ev] = k.split('\u0001');
+    const dive = isDive(ev), val = t => dive ? -parseFloat(t) : timeToSec(t);   // lower = better
+    const sw = R.swimmers[sid] || {};
+    const hist = ((sw.times || {})[ev] || {}).history || [];
+    const known = hist.filter(x => x.time && x.date).map(x => ({ v: val(x.time), d: x.date }))
+      .concat(swims.map(s => ({ v: val(s.time), d: s.date })));
+    const L = Math.min(...known.map(x => x.v));
+    const Ld = known.filter(x => x.v === L).map(x => x.d).sort()[0];
+    swims.forEach(s => {
+      const v = val(s.time), earlier = known.filter(x => x.d < s.date);
+      const P = earlier.length ? Math.min(...earlier.map(x => x.v)) : null;
+      s.pb = hasPBBase(sw, ev) && v === L && s.date === Ld && (P === null || v < P);
+    });
+  });
 }
 
 function handleFileDrop(e) {
@@ -1275,16 +1311,19 @@ function applyImport() {
   });
 
   const have = new Set(R.swims.map(s => [s.sid, s.kind, s.event, s.date, s.time].join('|')));
-  let added = 0, dupes = 0, skipped = 0, newBests = 0;
-  _imp.rows.forEach(r => {
+  let added = 0, dupes = 0, skipped = 0, newBests = 0, pbs = 0;
+  const rv = r => isDive(r.event) ? -parseFloat(r.time) : timeToSec(r.time);
+  const ordered = _imp.rows.slice().sort((a, b) => a.date.localeCompare(b.date) || rv(b) - rv(a));
+  ordered.forEach(r => {
     const sid = idFor[r.gender + '|' + r.name];
     if (!sid || !R.swimmers[sid]) { skipped++; return; }
     const key = [sid, r.kind, r.event, r.date, r.time].join('|');
     if (have.has(key)) { dupes++; return; }
     have.add(key);
     const mkey = r.date + '|' + r.meet;
-    R.swims.push({ id: 'w' + Date.now().toString(36) + added, sid, kind: r.kind, event: r.event, time: r.time,
-      date: r.date, meet: r.meet, mkey, code: _imp.meets[mkey].code, lo: !!r.leadoff });
+    const swim = { id: 'w' + Date.now().toString(36) + added, sid, kind: r.kind, event: r.event, time: r.time,
+      date: r.date, meet: r.meet, mkey, code: _imp.meets[mkey].code, lo: !!r.leadoff, pb: false };
+    R.swims.push(swim);
     added++;
     // Individual swims also feed the swimmer's SBT / LBT / history (relay splits don't)
     if (r.kind === 'ind') {
@@ -1295,6 +1334,9 @@ function applyImport() {
       if (!t.history.some(h => h.meet === r.meet && h.time === r.time)) t.history.push({ meet: r.meet, date: r.date, time: r.time });
       const better = (a, b) => !b || (isDive(r.event) ? parseFloat(a) > parseFloat(b) : timeToSec(a) < timeToSec(b));
       if (better(r.time, t.sbt)) { t.sbt = r.time; newBests++; }
+      // lifetime best: strictly faster than the best on record before this swim (no record = no flag)
+      swim.pbImp = true;
+      if (t.lbt && hasPBBase(s, r.event) && better(r.time, t.lbt)) { swim.pb = true; pbs++; }
       if (better(r.time, t.lbt)) t.lbt = r.time;
     }
   });
@@ -1313,7 +1355,7 @@ function applyImport() {
   document.getElementById('importPreview').innerHTML = '';
   save();
   renderAll();
-  showParseStatus(`✓ ${added} new swims imported (${newBests} new season bests)` +
+  showParseStatus(`✓ ${added} new swims imported · ${pbs} lifetime best${pbs===1?'':'s'} · ${newBests} new season bests` +
     (dupes ? ` · ${dupes} already in EagleRoster` : '') + (skipped ? ` · ${skipped} skipped` : ''), 'ok');
 }
 
@@ -1401,7 +1443,8 @@ function printTopTimes() {
   const meets = Object.values(used).sort((a,b) => a.date.localeCompare(b.date))
     .map(s => `<b>${md(s.date)}</b> ${esc(s.meet)}`).join(' &nbsp;·&nbsp; ');
   const nm = sw => `${esc(sw.first)} ${esc(sw.last)}`;
-  const lo = s => s.lo ? '<sup>LO</sup>' : '';
+  const lo = s => (s.pb ? '<span class="pbm">PB</span>' : '') + (s.lo ? '<sup>LO</sup>' : '');
+  const tc = s => `<td class="r${s.pb ? ' pbt' : ''}">${esc(s.time)}${lo(s)}</td>`;
   let body = '';
   if (_tt.view === 'name') {
     const rankOf = {}, people = {};
@@ -1412,21 +1455,21 @@ function printTopTimes() {
     Object.keys(people).sort((a,b) => (R.swimmers[a].last+R.swimmers[a].first).localeCompare(R.swimmers[b].last+R.swimmers[b].first)).forEach(sid => {
       const sw = R.swimmers[sid];
       body += `<table class="pt"><tr><th colspan="5">${nm(sw)} <span class="pc">${classOf(sw)||''}</span></th></tr>` +
-        people[sid].map(s => `<tr><td>${esc(s.event)}</td><td class="r">${esc(s.time)}${lo(s)}</td><td>${s.code}</td>${mt(s)}<td class="r">#${rankOf[s.id]}</td></tr>`).join('') + '</table>';
+        people[sid].map(s => `<tr><td>${esc(s.event)}</td>${tc(s)}<td>${s.code}</td>${mt(s)}<td class="r">#${rankOf[s.id]}</td></tr>`).join('') + '</table>';
     });
   } else {
     events.forEach(ev => {
       const rows = Object.values(byEvent[ev]).sort(ttSort(ev));
       body += `<table class="pt"><tr><th colspan="5">${esc(ev)}${_tt.kind==='split'?' split':''}</th></tr>` + rows.map(s => {
         const sw = R.swimmers[s.sid], rank = rows.findIndex(x => x.time === s.time) + 1, tie = rows.filter(x => x.time === s.time).length > 1;
-        return `<tr><td class="r">${rank}${tie?'*':''}</td><td class="n">${nm(sw)} <span class="pc">${classOf(sw)||''}</span></td><td class="r">${esc(s.time)}${lo(s)}</td><td>${s.code}</td>${mt(s)}</tr>`;
+        return `<tr><td class="r">${rank}${tie?'*':''}</td><td class="n">${nm(sw)} <span class="pc">${classOf(sw)||''}</span></td>${tc(s)}<td>${s.code}</td>${mt(s)}</tr>`;
       }).join('') + '</table>';
     });
   }
   document.getElementById('ttPrint').innerHTML =
     `<div class="ph"><b>Emory Swimming &amp; Diving — ${_tt.gender==='W'?'Women':'Men'}'s ${_tt.kind==='split'?'Relay Split':'Individual'} Top Times</b>
        &nbsp;${_tt.season} · ${_tt.view==='name'?'by name':'by event'} · ${codeTxt} · printed ${new Date().toLocaleDateString()}</div>
-     <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · LO = relay lead-off · * = tie</div>
+     <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · <span class="pbm">PB</span> = lifetime best · LO = relay lead-off · * = tie</div>
      <div class="pcols ${_tt.view==='name'?'':'pcols2'}">${body}</div>`;
   window.print();
 }
@@ -1458,7 +1501,7 @@ function renderTopTimesByName(byEvent, events) {
       h += `<tr>
         <td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(s.event)}</td>
         <td><div class="tt-meet">${esc(s.meet)} · ${s.date}</div></td>
-        <td class="ttime" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.lo?'<span class="badge lo">LO</span>':''}</td>
+        <td class="ttime${s.pb?' pr':''}" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.pb?'<span class="badge pbb">PB</span>':''}${s.lo?'<span class="badge lo">LO</span>':''}</td>
         <td class="tt-rank" style="text-align:right" title="Team rank in this event">#${rankOf[s.id]}</td>
         <td style="width:4.5rem;text-align:right">${ttCodeSel(s)}</td>
       </tr>`;
@@ -1510,7 +1553,7 @@ function renderTopTimes() {
         <td class="tt-rank">${rank}${tied?'*':''}</td>
         <td><div style="font-weight:600;font-size:.8rem">${esc(sw.first)} ${esc(sw.last)} ${classBadge(sw)}</div>
             <div class="tt-meet">${esc(s.meet)} · ${s.date}</div></td>
-        <td class="ttime" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.lo?'<span class="badge lo">LO</span>':''}</td>
+        <td class="ttime${s.pb?' pr':''}" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.pb?'<span class="badge pbb">PB</span>':''}${s.lo?'<span class="badge lo">LO</span>':''}</td>
         <td style="width:4.5rem;text-align:right">${ttCodeSel(s)}</td>
       </tr>`;
     });
@@ -1952,7 +1995,7 @@ function applyScraperImport(data) {
   let added = 0, updated = 0, timesUpdated = 0;
   ensureState();
   const existingCount = Object.keys(R.swimmers).length;
-  if (existingCount) {
+  if (existingCount && !data.merge) {
     const replace = confirm(`EagleRoster already has ${existingCount} athletes.\n\n` +
       `OK = REPLACE: delete the current roster, all imported swims, meets and rest codes, and load only this file.\n` +
       `Cancel = MERGE: keep everything and add/update from this file.`);
@@ -1976,6 +2019,7 @@ function applyScraperImport(data) {
           timesUpdated++;
         } else {
           const et = existingTimes[ev];
+          if (t.sc) et.sc = true;
           if (t.lbt && (!et.lbt || timeToSec(t.lbt) < timeToSec(et.lbt))) { et.lbt = t.lbt; timesUpdated++; }
           if (t.sbt && (!et.sbt || timeToSec(t.sbt) < timeToSec(et.sbt))) { et.sbt = t.sbt; timesUpdated++; }
           // merge history (avoid duplicates by meet+time)
@@ -2003,6 +2047,7 @@ function applyScraperImport(data) {
     }
   });
 
+  backfillPBs();   // new lifetime records can confirm best times from meets already imported
   save();
   renderAll();
   alert(`✅ Import complete from SwimCloud scrape (${data.scraped||'unknown date'})\n\n• ${added} new swimmers added\n• ${updated} existing swimmers updated\n• ${timesUpdated} time entries merged`);
