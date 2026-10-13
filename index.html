@@ -552,6 +552,17 @@ function classOf(s, end) {
   return left <= 0 ? 'SR' : left === 1 ? 'JR' : left === 2 ? 'SO' : left === 3 ? 'FR' : 'INC';
 }
 // Active = on this season's team: not graduated, not archived, not an incoming athlete who starts next year or later
+// Diver: Specialty "Diving", or (no specialty set) this season's results are all dives;
+// with no results this season, falls back to their recorded events
+function isDiver(s) {
+  if (!s) return false;
+  if (s.specialty) return s.specialty === 'Diving';
+  const sw = (R.swims || []).filter(x => x.sid === s.id && seasonOf(x.date) === seasonOf(new Date().toISOString().slice(0,10)));
+  if (sw.length) return sw.every(x => isDive(x.event));
+  const evs = Object.keys(s.times || {});
+  return evs.length > 0 && evs.every(isDive);
+}
+
 function isActive(s, end) { const c = classOf(s, end); return c !== 'ALUM' && c !== 'ARCH' && c !== 'INC'; }
 function classBadge(s, end) { const c = classOf(s, end); return `<span class="badge ${YEAR_COLORS[c]||'bbk'}">${c||'—'}</span>`; }
 const seasonLabel = end => `${end-1}–${String(end).slice(2)}`;
@@ -652,10 +663,12 @@ function renderRosterSeasons() {
     const p = act.filter(s => s.gender === g), c = {};
     p.forEach(s => { const k = classOf(s, sel) || '—'; c[k] = (c[k]||0) + 1; });
     const parts = ['FR','SO','JR','SR','GS','—'].filter(k => c[k]).map(k => `${k} ${c[k]}`);
-    return `<b style="color:var(--text)">${label} ${p.length}</b> · ${parts.join(' · ') || 'none'}`;
+    const d = p.filter(isDiver).length;
+    return `<b style="color:var(--text)">${label} ${p.length}</b> (${p.length - d} swim · ${d} dive) · ${parts.join(' · ') || 'none'}`;
   };
+  const dv = act.filter(isDiver).length;
   document.getElementById('rosterSummary').innerHTML =
-    `${seasonLabel(sel)}${sel>now?' projected':''}: <b style="color:var(--gold)">${act.length} athletes</b><br>${line('W','Women')}<br>${line('M','Men')}`;
+    `${seasonLabel(sel)}${sel>now?' projected':''}: <b style="color:var(--gold)">${act.length} athletes</b> (${act.length - dv} swimmers · ${dv} divers)<br>${line('W','Women')}<br>${line('M','Men')}`;
 }
 
 function renderRoster() {
