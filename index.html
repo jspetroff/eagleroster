@@ -1137,6 +1137,11 @@ function hy3Fmt(sec) {
   const m = Math.floor(sec / 60), s = (sec - m * 60).toFixed(2);
   return m ? `${m}:${s.padStart(5, '0')}` : s;
 }
+// Swim date sits at a fixed column (E2: 87, F2: 102). A reaction time can run straight into it, so never search for it.
+function hy3ColDate(L, col) {
+  const d = L.slice(col, col + 8);
+  return /^(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(19|20)\d\d$/.test(d) ? hy3Date(d) : '';
+}
 function hy3Date(mmddyyyy) { return `${mmddyyyy.slice(4, 8)}-${mmddyyyy.slice(0, 2)}-${mmddyyyy.slice(2, 4)}`; }
 
 function parseHy3(text, teamRe) {
@@ -1204,16 +1209,14 @@ function parseHy3(text, teamRe) {
       if (!st) out.warnings.push('Unknown stroke code: ' + L.slice(13, 22));
     } else if (rec === 'E2' && ind) {
       // a swimmer can have prelim + final results; keep the faster legal one
-      const r = { sec: parseFloat(L.slice(3, 11)), status: L[12], date: (L.match(/(\d{8})\s*\d*\s*\d*\s*$/) || [])[1] };
-      if (r.date) r.date = hy3Date(r.date);
+      const r = { sec: parseFloat(L.slice(3, 11)), status: L[12], date: hy3ColDate(L, 87) };
       if (!ind.res || (r.status !== 'Q' && r.sec > 0 && (ind.res.status === 'Q' || r.sec < ind.res.sec))) ind.res = r;
     } else if (rec === 'F1') {
       flush();
       const dist = parseInt(L.slice(15, 21), 10), st = L[21];
       relay = { dist, medley: st === 'E', legs: [], splits: {}, label: `${L[13] === 'M' ? 'Men' : 'Women'} ${dist} ${st === 'E' ? 'medley' : 'free'} relay ${L.slice(7, 8)}` };
     } else if (rec === 'F2' && relay) {
-      const d = L.match(/(\d{8})\s*\d*\s*\d*\s*$/);
-      relay.res = { sec: parseFloat(L.slice(3, 11)), status: L[12], date: d ? hy3Date(d[1]) : '' };
+      relay.res = { sec: parseFloat(L.slice(3, 11)), status: L[12], date: hy3ColDate(L, 102) };
     } else if (rec === 'F3' && relay) {
       for (let i = 2; i + 13 <= L.length + 1; i += 13) {
         const chunk = L.slice(i, i + 13);
@@ -1267,6 +1270,7 @@ async function handleResultsFiles(fileList) {
   showParseStatus(`Reading ${files.length} file${files.length>1?'s':''}...`, 'info');
   document.getElementById('importPreview').innerHTML = '';
   const fileInfo = [], rows = [];
+  let finalsCuts = null;
   const unreadable = loaded.filter(x => x.err);
   for (const { f, bytes, err } of loaded) {
     if (err) { fileInfo.push({ name: f.name, err: 'Chrome could not read this file — copy it to your Desktop and drop it from there.' }); continue; }
@@ -1283,6 +1287,10 @@ async function handleResultsFiles(fileList) {
         } else texts.push(new TextDecoder('latin1').decode(bytes));
         for (const t of texts) {
           const res = parseHy3(t);
+          if (/ncaa/i.test(res.meet) && /champ/i.test(res.meet)) {
+            const fc = hy3FinalsCuts(t);
+            if (fc.n) finalsCuts = fc;
+          }
           if (!res.rows.length) { fileInfo.push({ name: f.name, err: 'No Emory swims found in these results' }); continue; }
           const ni = res.rows.filter(r => r.kind === 'ind').length;
           fileInfo.push({ name: f.name, label: `Meet results: ${res.meet} (${res.date}) · ${ni} individual + ${res.rows.length - ni} splits`, warnings: res.warnings });
@@ -1297,6 +1305,10 @@ async function handleResultsFiles(fileList) {
     } catch (e) {
       fileInfo.push({ name: f.name, err: e.message });
     }
+  }
+  if (!rows.length && finalsCuts) {   // e.g. an NCAA file with no Emory swimmers — still worth the cuts
+    _imp = { rows: [], meets: {}, people: {}, fileInfo, finalsCuts };
+    renderImportPreview(fileInfo); return;
   }
   if (!rows.length) {
     showParseStatus(unreadable.length === files.length
@@ -1326,7 +1338,7 @@ async function handleResultsFiles(fileList) {
     if (!people[k]) people[k] = { key: k, name: r.name, gender: r.gender, year: r.year, ...nmMatch(r.name, r.gender, swimmers, R.aliases) };
   });
 
-  _imp = { rows, meets, people, fileInfo };
+  _imp = { rows, meets, people, fileInfo, finalsCuts };
   showParseStatus('', '');
   renderImportPreview(fileInfo);
 }
@@ -1364,6 +1376,7 @@ function renderImportPreview(fileInfo) {
           <option value="__new">+ Add as new swimmer</option>${opts}</select></div>`;
     });
   }
+  if (_imp.finalsCuts) h += `<div class="st stinfo" style="margin-top:1rem">NCAA championship file: Import will also set the cheer sheet's ${esc(_imp.finalsCuts.year)} A/B final cuts (${_imp.finalsCuts.n} events, 8th / 16th prelim times).</div>`;
   const nInd = _imp.rows.filter(r=>r.kind==='ind').length, nSpl = _imp.rows.length - nInd;
   h += `<button class="btn bprimary" style="width:100%;margin-top:1rem" onclick="applyImport()">&#9654; Import ${nInd} individual + ${nSpl} split times</button>
     <button class="btn bsm" style="width:100%;margin-top:.5rem" onclick="_imp=null;document.getElementById('importPreview').innerHTML=''">Cancel</button>`;
@@ -1392,6 +1405,8 @@ function applyImport() {
 
   const have = new Set(R.swims.map(s => [s.sid, s.kind, s.event, s.date, s.time].join('|')));
   let added = 0, dupes = 0, skipped = 0, newBests = 0, pbs = 0;
+  const fc = _imp.finalsCuts;
+  if (fc) R.reportRef = { ...(R.reportRef || {}), aFinal: fc.a, bFinal: fc.b, finalsYear: fc.year || (R.reportRef || {}).finalsYear || '' };
   const rv = r => isDive(r.event) ? -parseFloat(r.time) : timeToSec(r.time);
   const ordered = _imp.rows.slice().sort((a, b) => a.date.localeCompare(b.date) || rv(b) - rv(a));
   ordered.forEach(r => {
@@ -1436,6 +1451,7 @@ function applyImport() {
   save();
   renderAll();
   showParseStatus(`✓ ${added} new swims imported · ${pbs} lifetime best${pbs===1?'':'s'} · ${newBests} new season bests` +
+    (fc ? ` · cheer sheet A/B final cuts updated (${fc.year})` : '') +
     (dupes ? ` · ${dupes} already in EagleRoster` : '') + (skipped ? ` · ${skipped} skipped` : ''), 'ok');
   showRecordApprovals();   // any new team records? ask before they count
 }
