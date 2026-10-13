@@ -377,7 +377,12 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
         <div class="frow f2">
           <div><label>Season (for SBT)</label><select id="repSeason"></select></div>
           <div><label>Swimmers per event</label>
-            <select id="repLimit"><option value="0">Everyone with a time this season</option><option value="3">Top 3 by SBT</option><option value="4">Top 4 by SBT</option><option value="5">Top 5 by SBT</option><option value="8">Top 8 by SBT</option></select></div>
+            <select id="repLimit"><option value="entries">Meet entries (uploaded psych sheet)</option><option value="0">Everyone with a time this season</option><option value="3">Top 3 by SBT</option><option value="4">Top 4 by SBT</option><option value="5">Top 5 by SBT</option><option value="8">Top 8 by SBT</option></select></div>
+        </div>
+        <div style="margin:.25rem 0 1rem">
+          <button class="btn bsm" onclick="document.getElementById('entriesFile').click()">&#8679; Upload meet entries (psych sheet PDF)</button>
+          <input type="file" id="entriesFile" accept=".pdf" style="display:none" onchange="loadEntries(this.files[0]).finally(()=>{this.value=''})">
+          <div id="entriesStatus" style="font-size:.72rem;font-family:var(--fm);color:var(--text-dim);margin-top:.4rem"></div>
         </div>
         <div><label>Events (leave blank for all)</label>
           <div class="check-grid" id="repEventPicker"></div></div>
@@ -1696,6 +1701,7 @@ function addManualTime() {
 // EU VR = Records tab; prior-year A/B final cuts and NCAA records = saved reference data below.
 const REPORT_COLS = {
   ncaa_cheer: [
+    {id:'seed', label:'Seed (entries)', default:false},
     {id:'ltbt', label:'LTBT', default:true},
     {id:'sbt', label:'SBT', default:true},
     {id:'afinal', label:'A Final', default:true},
@@ -1710,6 +1716,7 @@ const REPORT_COLS = {
   uaa_cheer: [
     {id:'ltbt', label:'LTBT', default:true},
     {id:'sbt', label:'SBT', default:true},
+    {id:'seed', label:'Seed (entries)', default:false},
     {id:'cutA', label:'NCAA A cut', default:true},
     {id:'cutB', label:'NCAA B cut', default:true},
     {id:'cutQ', label:'2026 Invite', default:true},
@@ -1754,6 +1761,9 @@ function renderReportEvents() {
   const sel = document.getElementById('repSeason');
   const keep = sel.value;
   sel.innerHTML = seasons.map(s => `<option ${s === (keep || cur) ? 'selected' : ''}>${s}</option>`).join('');
+  renderEntriesStatus();
+  if (!(R.reportEntries && Object.keys(R.reportEntries.entries || {}).length) && document.getElementById('repLimit').value === 'entries')
+    document.getElementById('repLimit').value = '0';
   // saved reference data
   const ref = R.reportRef || {};
   document.getElementById('aFinalCuts').value = ref.aFinal || '';
@@ -1817,6 +1827,97 @@ async function loadFinalsCuts(file) {
   }
 }
 
+// ── MEET ENTRIES (Meet Manager psych sheet PDF) ──
+// "Event 3 Women 500 Yard Freestyle" headers (relays skipped), rows "1 Liu, Meredith SR Emory University 4:55.04 ..."
+const PSYCH_STROKE = { freestyle:'FS', backstroke:'BK', breaststroke:'BR', butterfly:'FL', im:'IM', 'individual medley':'IM' };
+function parsePsychSheet(lines) {
+  const out = { meet: '', entries: {}, warnings: [] };
+  let cur = null;
+  lines.forEach((line, i) => {
+    if (!out.meet && /Psych Sheet/i.test(line) && i >= 2) out.meet = lines[i - 2].trim();
+    const h = line.match(/^Event\s+\d+\s+(?:\.\.\.\s*\()?\s*(Women|Men|Girls|Boys)\s+(.+?)\)?\s*$/i);
+    if (h) {
+      const g = /^(Women|Girls)/i.test(h[1]) ? 'W' : 'M', rest = h[2];
+      let ev = null;
+      const sw = rest.match(/^(\d+)\s+Yard\s+(.+)$/i);
+      const dv = rest.match(/(\d)\s*(?:mtr|meter|m)\b.*Diving/i);
+      if (/Relay/i.test(rest)) ev = null;
+      else if (sw && PSYCH_STROKE[sw[2].trim().toLowerCase()]) ev = `${+sw[1]} ${PSYCH_STROKE[sw[2].trim().toLowerCase()]}`;
+      else if (dv) ev = dv[1] === '1' ? '1m Springboard' : '3m Springboard';
+      else out.warnings.push('Skipped event: ' + line);
+      cur = ev ? g + '|' + ev : null;
+      if (cur && !out.entries[cur]) out.entries[cur] = [];
+      return;
+    }
+    if (!cur) return;
+    const r = line.match(/^\d+\*?\s+([^,]+),\s*([A-Za-z'.\- ]+?)\s+(?:(FR|SO|JR|SR|GS|GR|5Y|6Y)\s+)?\S.*?\s((?:\d+:)?\d+\.\d\d|NT|NS)(?:\s|$)/);
+    if (r) out.entries[cur].push({ name: `${r[2].trim()} ${r[1].trim()}`, year: r[3] || '', seed: /^N/.test(r[4]) ? '' : r[4] });
+  });
+  return out;
+}
+
+// Match entry names to the roster (same matcher + remembered choices as imports)
+function resolveEntries() {
+  const ent = R.reportEntries; if (!ent) return;
+  const all = Object.values(R.swimmers);
+  Object.entries(ent.entries).forEach(([k, list]) => {
+    const g = k.split('|')[0];
+    list.forEach(e => {
+      const m = nmMatch(e.name, g, all, R.aliases), s = m.id && R.swimmers[m.id];
+      const ok = m.how === 'alias' || m.how === 'exact' || (s && nmNorm(s.first)[0] === nmNorm(e.name)[0]);
+      e.sid = ok ? m.id : null; e.g = g;
+    });
+  });
+}
+
+async function loadEntries(file) {
+  if (!file) return;
+  const st = document.getElementById('entriesStatus');
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const res = parsePsychSheet(tmItemsToLines(await readPdfPages(bytes)));
+    const n = Object.values(res.entries).reduce((a, l) => a + l.length, 0);
+    if (!n) throw new Error('No individual entries found — is this a Meet Manager psych sheet?');
+    R.reportEntries = { meet: res.meet, file: file.name, loaded: new Date().toISOString().slice(0, 10), entries: res.entries };
+    resolveEntries();
+    save();
+    document.getElementById('repLimit').value = 'entries';
+    renderEntriesStatus();
+  } catch (e) {
+    st.innerHTML = `<div class="st sterr">${esc(e.message)}</div>`;
+  }
+}
+
+function clearEntries() {
+  if (!confirm('Clear the uploaded meet entries?')) return;
+  R.reportEntries = null; save(); renderEntriesStatus();
+  document.getElementById('repLimit').value = '0';
+}
+
+function renderEntriesStatus() {
+  const st = document.getElementById('entriesStatus'), ent = R.reportEntries;
+  if (!ent || !ent.entries) { st.innerHTML = 'No meet entries uploaded yet.'; window._entryMiss = []; return; }
+  const all = Object.values(ent.entries).flat();
+  const swimmers = new Set(all.filter(e => e.sid).map(e => e.sid));
+  const miss = {};
+  all.filter(e => !e.sid).forEach(e => miss[e.g + '|' + e.name] = e);
+  const missList = Object.values(miss);
+  const roster = Object.values(R.swimmers).sort((a, b) => (a.last + a.first).localeCompare(b.last + b.first));
+  st.innerHTML = `Entries: <b style="color:var(--text)">${esc(ent.meet || ent.file)}</b> · ${all.length} individual entries · ${swimmers.size} swimmers · ${Object.keys(ent.entries).length} events
+    <a href="#" onclick="clearEntries();return false" style="color:var(--red);margin-left:.5rem">clear</a>` +
+    (missList.length ? `<div style="margin-top:.4rem;color:var(--gold)">${missList.length} name${missList.length > 1 ? 's' : ''} not matched to the roster — left off the sheet unless you match them:</div>` +
+      missList.map((e, i) => `<div class="imp-row"><span>${esc(e.name)} <span class="tt-meet">${e.g === 'W' ? 'Women' : 'Men'}${e.year ? ' · ' + e.year : ''}</span></span>
+        <select onchange="matchEntry(${i}, this.value)"><option value="">— skip —</option>${roster.filter(s => s.gender === e.g).map(s =>
+          `<option value="${esc(s.id)}">${esc(s.first)} ${esc(s.last)}</option>`).join('')}</select></div>`).join('') : '');
+  window._entryMiss = missList;
+}
+
+function matchEntry(i, sid) {
+  const e = (window._entryMiss || [])[i]; if (!e || !sid) return;
+  R.aliases[e.g + '|' + nmNorm(e.name)] = sid;   // remembered for imports too
+  resolveEntries(); save(); renderEntriesStatus();
+}
+
 // Save reference data as it's typed (debounced) and show what was understood
 let _refTimer = null;
 function saveReportRef() {
@@ -1876,7 +1977,12 @@ function generateReport() {
   const gender = document.getElementById('repGender').value;
   const year = document.getElementById('repYear').value;
   const season = document.getElementById('repSeason').value || seasonOf(new Date().toISOString().slice(0,10));
-  const limit = parseInt(document.getElementById('repLimit').value, 10) || 0;
+  const useEntries = document.getElementById('repLimit').value === 'entries';
+  const limit = useEntries ? 0 : (parseInt(document.getElementById('repLimit').value, 10) || 0);
+  const ent = R.reportEntries;
+  if (useEntries && !(ent && Object.keys(ent.entries || {}).length)) {
+    document.getElementById('reportStatus').innerHTML = '<div class="st sterr">Upload the meet\'s psych sheet first, or pick another "Swimmers per event" option.</div>'; return;
+  }
   const selectedEvents = [...document.querySelectorAll('#repEventPicker input:checked')].map(i=>i.value);
   const selectedCols = [...document.querySelectorAll('#colPicker input:checked')].map(i=>i.id.replace('col_',''));
   const aFinal = parseCuts(document.getElementById('aFinalCuts').value);
@@ -1893,13 +1999,20 @@ function generateReport() {
   genders.forEach(g => selectedEvents.forEach(ev => {
     const dive = isDive(ev);
     // who's listed: everyone with a time in this event this season, fastest first (optionally top N)
-    let inEvent = swimmers.filter(s => s.gender === g).map(s => ({ s, t: reportTimes(s, ev, season) })).filter(x => x.t.sbt);
-    inEvent.sort((a, b) => dive ? parseFloat(b.t.sbt) - parseFloat(a.t.sbt) : timeToSec(a.t.sbt) - timeToSec(b.t.sbt));
-    if (limit) inEvent = inEvent.slice(0, limit);
+    let inEvent;
+    if (useEntries) {   // exactly who's entered, in psych sheet order (year filter still applies)
+      inEvent = (ent.entries[g + '|' + ev] || []).map(e => ({ s: R.swimmers[e.sid], seed: e.seed }))
+        .filter(x => x.s && (year === 'all' || classOf(x.s) === year))
+        .map(x => ({ ...x, t: reportTimes(x.s, ev, season) }));
+    } else {
+      inEvent = swimmers.filter(s => s.gender === g).map(s => ({ s, t: reportTimes(s, ev, season) })).filter(x => x.t.sbt);
+      inEvent.sort((a, b) => dive ? parseFloat(b.t.sbt) - parseFloat(a.t.sbt) : timeToSec(a.t.sbt) - timeToSec(b.t.sbt));
+      if (limit) inEvent = inEvent.slice(0, limit);
+    }
     if (!inEvent.length) return;
     const std = (NCAA_STD[g] || {})[ev] || [];
     const rec = (R.records || []).find(r => r.g === g && r.type === 'swim' && r.ev === ev);
-    inEvent.forEach(({ s, t }, i) => {
+    inEvent.forEach(({ s, t, seed }, i) => {
       const drop = t.prior && t.sbt && !dive ? timeToSec(t.prior) - timeToSec(t.sbt) : null;
       rows.push({
         first: i === 0, last: i === inEvent.length - 1, event: ev, g,
@@ -1909,7 +2022,7 @@ function generateReport() {
         vr: rec ? rec.time : '',
         cutA: std[0] || '', cutB: std[1] || '', cutQ: std[2] || '',
         std: t.sbSwim ? ncaaMark(t.sbSwim) : '',
-        prior: t.prior, entries: t.n,
+        prior: t.prior, entries: t.n, seed: seed || '',
         drop: drop == null ? '' : drop.toFixed(2),
         pct: drop == null ? '' : ((drop / timeToSec(t.prior)) * 100).toFixed(2) + '%'
       });
@@ -1920,7 +2033,7 @@ function generateReport() {
 
   const colMap = { ltbt:'LTBT', sbt:'SBT', afinal:(yr ? yr + ' ' : '') + 'A Final', bfinal:(yr ? yr + ' ' : '') + 'B Final',
     ncaarec:'NCAA Rec', vr:'EU VR', cutA:'NCAA A', cutB:'NCAA B', cutQ:'2026 Invite', std:'Std',
-    prior:'Best before season', drop:'Drop (s)', pct:'% Drop', entries:'# Swims' };
+    seed:'Seed', prior:'Best before season', drop:'Drop (s)', pct:'% Drop', entries:'# Swims' };
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const headers = [...(_currentReport === 'ncaa_cheer' ? ['Day'] : []), ...(gender === 'all' ? ['Gender'] : []), 'Event', 'Racer', ...selectedCols.map(c => colMap[c] || c)];
   const csvRows = [headers.map(q).join(',')];
