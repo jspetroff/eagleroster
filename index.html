@@ -168,6 +168,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .code-S{color:var(--gold);}
 .badge.lo{background:rgba(92,155,224,.12);color:var(--blue);margin-left:.35rem;}
 .badge.pbb{background:var(--gold);color:#0f1117;margin-left:.35rem;}
+.badge.vrb{background:var(--purple);color:#fff;margin-left:.35rem;}
 .badge.std{margin-left:.35rem;border:1px solid currentColor;}
 .badge.stdA{background:#e05c5c;color:#fff;border-color:#e05c5c;}
 .badge.stdQ{color:var(--green);background:rgba(76,175,125,.12);}
@@ -203,6 +204,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   table.pt .r{text-align:right;} table.pt .pc{color:#555;font-size:7.5px;font-weight:normal;}
   table.pt sup{font-size:6px;}
   table.pt td.pbt{font-weight:800;}
+  .pbm.vrm{background:#000;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .pbm.stdm{border-radius:50%;min-width:8px;text-align:center;}
   .pbm{display:inline-block;font-size:6.5px;font-weight:800;border:1px solid #000;border-radius:2px;padding:0 1.5px;margin-left:2px;line-height:1.1;vertical-align:1px;}
   .card{break-inside:avoid;border:1px solid #999;border-radius:4px;padding:5px 7px;margin:0 0 8px;}
@@ -455,7 +457,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div class="fpill" data-v="all" onclick="setTT('all',true,this)">All swims this season</div>
   </div>
   <div id="ttPrint" class="print-only"></div>
-  <div id="ttHelp" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Codes (click to turn each on/off): U = unrested · UwS = unrested, suited · S = shaved. <span class="badge pbb">PB</span> = lifetime best · <span class="badge std stdA">A</span> <span class="badge std stdQ">Q</span> <span class="badge std stdB">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · <span class="badge lo">LO</span> = relay lead-off.</div>
+  <div id="ttHelp" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Codes (click to turn each on/off): U = unrested · UwS = unrested, suited · S = shaved. <span class="badge pbb">PB</span> = lifetime best · <span class="badge vrb">VR</span> = broke team record · <span class="badge std stdA">A</span> <span class="badge std stdQ">Q</span> <span class="badge std stdB">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · <span class="badge lo">LO</span> = relay lead-off.</div>
   <div class="tt-grid" id="ttList"></div>
 </div>
 
@@ -1461,7 +1463,7 @@ function printTopTimes() {
   const meets = Object.values(used).sort((a,b) => a.date.localeCompare(b.date))
     .map(s => `<b>${md(s.date)}</b> ${esc(s.meet)}`).join(' &nbsp;·&nbsp; ');
   const nm = sw => `${esc(sw.first)} ${esc(sw.last)}`;
-  const lo = s => (s.pb ? '<span class="pbm">PB</span>' : '') + (m => m ? `<span class="pbm stdm">${m}</span>` : '')(ncaaMark(s)) + (s.lo ? '<sup>LO</sup>' : '');
+  const lo = s => (s.pb ? '<span class="pbm">PB</span>' : '') + (m => m ? `<span class="pbm stdm">${m}</span>` : '')(ncaaMark(s)) + (_vr.has(s.id) ? '<span class="pbm vrm">VR</span>' : '') + (s.lo ? '<sup>LO</sup>' : '');
   const tc = s => `<td class="r${s.pb ? ' pbt' : ''}">${esc(s.time)}${lo(s)}</td>`;
   let body = '';
   if (_tt.view === 'name') {
@@ -1487,7 +1489,7 @@ function printTopTimes() {
   document.getElementById('ttPrint').innerHTML =
     `<div class="ph"><b>Emory Swimming &amp; Diving — ${_tt.gender==='W'?'Women':'Men'}'s ${_tt.kind==='split'?'Relay Split':'Individual'} Top Times</b>
        &nbsp;${_tt.season} · ${_tt.view==='name'?'by name':'by event'} · ${codeTxt} · printed ${new Date().toLocaleDateString()}</div>
-     <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · <span class="pbm">PB</span> = lifetime best · <span class="pbm stdm">A</span> <span class="pbm stdm">Q</span> <span class="pbm stdm">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · LO = relay lead-off · * = tie</div>
+     <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · <span class="pbm">PB</span> = lifetime best · <span class="pbm vrm">VR</span> = broke team record · <span class="pbm stdm">A</span> <span class="pbm stdm">Q</span> <span class="pbm stdm">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · LO = relay lead-off · * = tie</div>
      <div class="pcols ${_tt.view==='name'?'':'pcols2'}">${body}</div>`;
   window.print();
 }
@@ -1519,7 +1521,7 @@ function renderTopTimesByName(byEvent, events) {
       h += `<tr>
         <td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(s.event)}</td>
         <td><div class="tt-meet">${esc(s.meet)} · ${s.date}</div></td>
-        <td class="ttime${s.pb?' pr':''}" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.pb?'<span class="badge pbb">PB</span>':''}${(m => m ? `<span class="badge std std${m}">${m}</span>` : '')(ncaaMark(s))}${s.lo?'<span class="badge lo">LO</span>':''}</td>
+        <td class="ttime${s.pb?' pr':''}" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.pb?'<span class="badge pbb">PB</span>':''}${(m => m ? `<span class="badge std std${m}">${m}</span>` : '')(ncaaMark(s))}${_vr.has(s.id)?'<span class="badge vrb">VR</span>':''}${s.lo?'<span class="badge lo">LO</span>':''}</td>
         <td class="tt-rank" style="text-align:right" title="Team rank in this event">#${rankOf[s.id]}</td>
         <td style="width:4.5rem;text-align:right">${ttCodeSel(s)}</td>
       </tr>`;
@@ -1531,6 +1533,7 @@ function renderTopTimesByName(byEvent, events) {
 
 function renderTopTimes() {
   ensureState();
+  _vr = recordBreaks();
   const list = document.getElementById('ttList');
   const sel = document.getElementById('ttSeason');
   const seasons = [...new Set(R.swims.map(s => seasonOf(s.date)))].sort().reverse();
@@ -1571,7 +1574,7 @@ function renderTopTimes() {
         <td class="tt-rank">${rank}${tied?'*':''}</td>
         <td><div style="font-weight:600;font-size:.8rem">${esc(sw.first)} ${esc(sw.last)} ${classBadge(sw)}</div>
             <div class="tt-meet">${esc(s.meet)} · ${s.date}</div></td>
-        <td class="ttime${s.pb?' pr':''}" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.pb?'<span class="badge pbb">PB</span>':''}${(m => m ? `<span class="badge std std${m}">${m}</span>` : '')(ncaaMark(s))}${s.lo?'<span class="badge lo">LO</span>':''}</td>
+        <td class="ttime${s.pb?' pr':''}" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.pb?'<span class="badge pbb">PB</span>':''}${(m => m ? `<span class="badge std std${m}">${m}</span>` : '')(ncaaMark(s))}${_vr.has(s.id)?'<span class="badge vrb">VR</span>':''}${s.lo?'<span class="badge lo">LO</span>':''}</td>
         <td style="width:4.5rem;text-align:right">${ttCodeSel(s)}</td>
       </tr>`;
     });
@@ -1792,6 +1795,41 @@ function ncaaMark(s) {
   const t = timeToSec(s.time), [A, B, Q] = std.map(timeToSec);
   return t <= A ? 'A' : t <= Q ? 'Q' : t <= B ? 'B' : '';
 }
+
+
+// ── EMORY TEAM RECORDS (individual swimming, updated July 2026) ───────────
+const TEAM_RECORDS_ASOF = '2026-07-31';
+const TEAM_RECORDS = {
+  W: { '50 FS':['22.48','Fiona Muir'], '100 FS':['49.28','Fiona Muir'], '200 FS':['1:46.82','Cindy Cheng'],
+       '500 FS':['4:47.04','Liz Horvat'], '1000 FS':['9:57.52','Liz Horvat'], '1650 FS':['16:27.82','Julia Durmer'],
+       '100 BK':['53.65','Cindy Cheng'], '200 BK':['1:56.63','Cindy Cheng'],
+       '100 BR':['1:01.26','Katie Cohen'], '200 BR':['2:11.80','Katie Cohen'],
+       '100 FL':['54.14','Taylor Leone'], '200 FL':['2:00.25','Elodie Mitchell'],
+       '200 IM':['2:00.28','Allison Greeneway'], '400 IM':['4:15.02','Liz Horvat'] },
+  M: { '50 FS':['19.37','Oliver Smith'], '100 FS':['42.98','Oliver Smith'], '200 FS':['1:35.92','Pat Pema'],
+       '500 FS':['4:20.41','Pat Pema'], '1000 FS':['9:12.62','Thomas Gordon'], '1650 FS':['15:12.80','Thomas Gordon'],
+       '100 BK':['47.39','Ryan Soh'], '200 BK':['1:45.34','Sven Becker'],
+       '100 BR':['50.94','Andrew Wilson'], '200 BR':['1:50.80','Andrew Wilson'],
+       '100 FL':['47.21','Ryan Soh'], '200 FL':['1:45.43','Patrick Augustyn'],
+       '200 IM':['1:44.18','Andrew Wilson'], '400 IM':['3:49.21','Crow Thorsen'] },
+};
+// Swims (individual + lead-offs) that broke the team record at the time they were swum.
+// Walks swims in date order so a record broken earlier this season becomes the bar for later swims.
+function recordBreaks() {
+  const out = new Set(), cur = {};
+  (R.swims || []).filter(s => s.kind === 'ind' && s.date > TEAM_RECORDS_ASOF && R.swimmers[s.sid])
+    .map(s => ({ s, g: R.swimmers[s.sid].gender, t: timeToSec(s.time) }))
+    .sort((a, b) => a.s.date.localeCompare(b.s.date) || b.t - a.t)
+    .forEach(({ s, g, t }) => {
+      const base = (TEAM_RECORDS[g] || {})[s.event];
+      if (!base) return;
+      const k = g + '|' + s.event;
+      if (cur[k] === undefined) cur[k] = timeToSec(base[0]);
+      if (t < cur[k]) { out.add(s.id); cur[k] = t; }
+    });
+  return out;
+}
+let _vr = new Set();
 
 const RELAY_DEFS = [
   { name: '200 Free Relay',   legs: ['50 FS', '50 FS', '50 FS', '50 FS'],     medley: false },
