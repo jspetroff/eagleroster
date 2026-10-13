@@ -2035,7 +2035,8 @@ function applyScraperImport(data) {
       R.swimmers[s.id] = {
         id: s.id,
         first: s.first, last: s.last,
-        gender: s.gender, year: s.year || 'FR',
+        gender: s.gender, year: s.gradYear ? '' : (s.year || 'FR'),
+        ...(s.gradYear ? { gradYear: +s.gradYear } : {}),
         specialty: '',
         swimcloud: s.swimcloud || '',
         swimcloudId: s.swimcloudId || '',
