@@ -370,22 +370,31 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
         <div class="ct">Filter Swimmers</div>
         <div class="frow f2">
           <div><label>Gender</label>
-            <select id="repGender"><option value="all">All</option><option value="W">Women</option><option value="M">Men</option></select></div>
+            <select id="repGender"><option value="W">Women</option><option value="M">Men</option><option value="all">Both</option></select></div>
           <div><label>Year</label>
             <select id="repYear"><option value="all">All Years</option><option>FR</option><option>SO</option><option>JR</option><option>SR</option><option>GS</option></select></div>
+        </div>
+        <div class="frow f2">
+          <div><label>Season (for SBT)</label><select id="repSeason"></select></div>
+          <div><label>Swimmers per event</label>
+            <select id="repLimit"><option value="0">Everyone with a time this season</option><option value="3">Top 3 by SBT</option><option value="4">Top 4 by SBT</option><option value="5">Top 5 by SBT</option><option value="8">Top 8 by SBT</option></select></div>
         </div>
         <div><label>Events (leave blank for all)</label>
           <div class="check-grid" id="repEventPicker"></div></div>
       </div>
       <div class="card" style="margin-top:1rem">
-        <div class="ct">Reference Data</div>
-        <p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.75rem">Paste cut lines or records to include in the report (one per line: <code style="font-family:var(--fm)">Event,Time</code>).</p>
-        <div class="frow">
-          <div><label>A Final cuts (prior year)</label><textarea id="aFinalCuts" rows="3" placeholder="500 FS,4:28.39&#10;200 IM,1:48.29"></textarea></div>
-          <div><label>B Final cuts (prior year)</label><textarea id="bFinalCuts" rows="3" placeholder="500 FS,4:29.27&#10;200 IM,1:49.49"></textarea></div>
+        <div class="ct">Reference Data (saved)</div>
+        <p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.75rem">Already built in: SBT from imported meets, LTBT, NCAA A/B cuts and 2026 invite times, and EU varsity records from the Records tab. Paste the rest below, one per line, e.g. <code style="font-family:var(--fm)">W 500 Free,4:52.10</code> (start with W or M; without it the line applies to both).</p>
+        <div class="frow f2">
+          <div><label>Prior-year NCAA finals (year)</label><input id="finalsYear" type="text" placeholder="2026" oninput="saveReportRef()"></div>
+          <div></div>
         </div>
-        <div><label>NCAA Records</label><textarea id="ncaaRecs" rows="3" placeholder="500 FS,4:18.35&#10;200 IM,1:42.97"></textarea></div>
-        <div style="margin-top:.75rem"><label>Varsity Records</label><textarea id="varsityRecs" rows="3" placeholder="500 FS,4:20.41&#10;200 IM,1:44.18"></textarea></div>
+        <div class="frow">
+          <div><label>A Final cuts (8th place, prior year)</label><textarea id="aFinalCuts" rows="3" placeholder="W 500 FS,4:52.10&#10;M 500 FS,4:28.39" oninput="saveReportRef()"></textarea></div>
+          <div><label>B Final cuts (16th place, prior year)</label><textarea id="bFinalCuts" rows="3" placeholder="W 500 FS,4:56.00&#10;M 500 FS,4:31.27" oninput="saveReportRef()"></textarea></div>
+        </div>
+        <div><label>NCAA DIII Records</label><textarea id="ncaaRecs" rows="3" placeholder="W 500 FS,4:40.15&#10;M 500 FS,4:18.35" oninput="saveReportRef()"></textarea></div>
+        <div id="refStatus" style="font-size:.72rem;font-family:var(--fm);color:var(--text-dim);margin-top:.5rem"></div>
       </div>
       <button class="btn bprimary" style="width:100%;margin-top:1rem;padding:.75rem" onclick="generateReport()">&#8681; Generate &amp; Download Excel</button>
       <div id="reportStatus" style="margin-top:.5rem"></div>
@@ -1664,28 +1673,39 @@ function addManualTime() {
 }
 
 // ── REPORTS ───────────────────────────────────────────────────────────────
+// ── REPORTS (cheer sheets) ────────────────────────────────────────────────
+// Data sources: SBT = best swim in the chosen season from imported meets (incl. relay lead-offs);
+// LTBT = lifetime best (SwimCloud + imports); NCAA A/B/2026 invite = built-in standards;
+// EU VR = Records tab; prior-year A/B final cuts and NCAA records = saved reference data below.
 const REPORT_COLS = {
   ncaa_cheer: [
     {id:'ltbt', label:'LTBT', default:true},
     {id:'sbt', label:'SBT', default:true},
-    {id:'afinal', label:'24 A Final', default:true},
-    {id:'bfinal', label:'24 B Final', default:true},
+    {id:'afinal', label:'A Final', default:true},
+    {id:'bfinal', label:'B Final', default:true},
     {id:'ncaarec', label:'NCAA Rec', default:true},
-    {id:'vr', label:'Varsity Record', default:true},
+    {id:'vr', label:'EU VR', default:true},
+    {id:'cutA', label:'NCAA A cut', default:false},
+    {id:'cutB', label:'NCAA B cut', default:false},
+    {id:'cutQ', label:'2026 Invite', default:false},
+    {id:'std', label:'Standard met (SBT)', default:false},
   ],
   uaa_cheer: [
     {id:'ltbt', label:'LTBT', default:true},
     {id:'sbt', label:'SBT', default:true},
-    {id:'ncaacut', label:'NCAA Cut', default:true},
+    {id:'cutA', label:'NCAA A cut', default:true},
+    {id:'cutB', label:'NCAA B cut', default:true},
+    {id:'cutQ', label:'2026 Invite', default:true},
+    {id:'std', label:'Standard met (SBT)', default:true},
+    {id:'vr', label:'EU VR', default:true},
     {id:'ncaarec', label:'NCAA Rec', default:false},
-    {id:'vr', label:'Varsity Record', default:true},
   ],
   progress: [
     {id:'sbt', label:'SBT', default:true},
-    {id:'ltbt', label:'LBT', default:true},
+    {id:'prior', label:'Best before season', default:true},
     {id:'drop', label:'Drop (secs)', default:true},
     {id:'pct', label:'% Drop', default:true},
-    {id:'entries', label:'# Results', default:true},
+    {id:'entries', label:'# Swims this season', default:true},
   ]
 };
 
@@ -1698,105 +1718,165 @@ function selectReport(type, el) {
 
 function renderColPicker() {
   const cols = REPORT_COLS[_currentReport] || [];
+  const yr = ((R.reportRef || {}).finalsYear) || '';
   document.getElementById('colPicker').innerHTML = cols.map(c =>
-    `<label class="check-item"><input type="checkbox" id="col_${c.id}" ${c.default?'checked':''}> ${c.label}</label>`
+    `<label class="check-item"><input type="checkbox" id="col_${c.id}" ${c.default?'checked':''}> ${c.id === 'afinal' || c.id === 'bfinal' ? (yr ? yr + ' ' : '') + c.label : c.label}</label>`
   ).join('');
 }
 
 function renderReportEvents() {
+  ensureState();
   const evs = EVENTS_IND.filter(e=>!e.includes('Relay'));
   document.getElementById('repEventPicker').innerHTML = evs.map(e =>
     `<label class="check-item"><input type="checkbox" value="${esc(e)}" checked> ${esc(e)}</label>`
   ).join('');
+  // seasons that have imported swims
+  const seasons = [...new Set((R.swims || []).map(s => seasonOf(s.date)))].sort().reverse();
+  const cur = seasonOf(new Date().toISOString().slice(0,10));
+  if (!seasons.includes(cur)) seasons.unshift(cur);
+  const sel = document.getElementById('repSeason');
+  const keep = sel.value;
+  sel.innerHTML = seasons.map(s => `<option ${s === (keep || cur) ? 'selected' : ''}>${s}</option>`).join('');
+  // saved reference data
+  const ref = R.reportRef || {};
+  document.getElementById('aFinalCuts').value = ref.aFinal || '';
+  document.getElementById('bFinalCuts').value = ref.bFinal || '';
+  document.getElementById('ncaaRecs').value = ref.ncaaRec || '';
+  document.getElementById('finalsYear').value = ref.finalsYear || '';
+  checkReportRef();
 }
 
-async function generateReport() {
+// Save reference data as it's typed (debounced) and show what was understood
+let _refTimer = null;
+function saveReportRef() {
+  R.reportRef = {
+    aFinal: document.getElementById('aFinalCuts').value,
+    bFinal: document.getElementById('bFinalCuts').value,
+    ncaaRec: document.getElementById('ncaaRecs').value,
+    finalsYear: document.getElementById('finalsYear').value.trim(),
+  };
+  checkReportRef();
+  clearTimeout(_refTimer);
+  _refTimer = setTimeout(() => { save(); renderColPicker(); }, 800);
+}
+function checkReportRef() {
+  const out = [];
+  [['aFinalCuts','A Final'],['bFinalCuts','B Final'],['ncaaRecs','NCAA Rec']].forEach(([id, label]) => {
+    const p = parseCuts(document.getElementById(id).value);
+    const n = Object.keys(p.map).length;
+    if (n || p.bad.length) out.push(`${label}: ${n} event${n===1?'':'s'}${p.bad.length ? ` · <span style="color:var(--red)">couldn't read: ${p.bad.map(esc).join(' | ')}</span>` : ''}`);
+  });
+  document.getElementById('refStatus').innerHTML = out.length ? out.join('<br>') : '';
+}
+
+// "500 FS,4:28.39" — also accepts "500 Free", "500 Freestyle", "100 Back(stroke)", "Breast", "Fly", tabs or 2+ spaces as separator.
+// Each line may be prefixed with W/M (or Women/Men) to give different values by gender: "W 500 FS,4:47.00".
+const REF_STROKE = { free:'FS', freestyle:'FS', fs:'FS', back:'BK', backstroke:'BK', bk:'BK', breast:'BR', breaststroke:'BR', br:'BR',
+  fly:'FL', butterfly:'FL', fl:'FL', im:'IM', 'individual medley':'IM' };
+function parseCuts(text) {
+  const map = {}, bad = [];
+  (text||'').split('\n').map(l => l.trim()).filter(Boolean).forEach(line => {
+    const m = line.match(/^(?:(W|M|Women|Men|Womens|Mens)\b[\s,:-]*)?(\d{2,4})\s*(?:-?yard)?\s*([A-Za-z ]+?)\s*(?:,|\t|\s{2,}|\s)\s*([\d:.]+)\s*$/i);
+    const st = m && REF_STROKE[m[3].trim().toLowerCase()];
+    if (!m || !st) { bad.push(line); return; }
+    const g = m[1] ? (m[1][0].toUpperCase() === 'W' ? 'W' : 'M') : '';
+    map[(g ? g + '|' : '') + `${+m[2]} ${st}`] = m[4];
+  });
+  return { map, bad };
+}
+const refFor = (p, g, ev) => p.map[g + '|' + ev] || p.map[ev] || '';
+
+// Season best from imported meets; lifetime best; best before the season (for progress)
+function reportTimes(s, ev, season) {
+  const dive = isDive(ev), val = t => dive ? -parseFloat(t) : timeToSec(t);
+  const swims = (R.swims || []).filter(x => x.sid === s.id && x.kind === 'ind' && x.event === ev && seasonOf(x.date) === season);
+  const sb = swims.length ? swims.reduce((a, b) => val(b.time) < val(a.time) ? b : a) : null;
+  const t = (s.times || {})[ev] || {};
+  const known = [t.lbt, sb && sb.time].filter(Boolean);
+  const lt = known.length ? known.reduce((a, b) => val(b) < val(a) ? b : a) : '';
+  const start = season.slice(0, 4) + '-08-01';
+  const prev = (t.history || []).filter(h => h.time && h.date && h.date < start).map(h => h.time);
+  const prior = prev.length ? prev.reduce((a, b) => val(b) < val(a) ? b : a) : '';
+  return { sbt: sb ? sb.time : '', sbSwim: sb, ltbt: lt, prior, n: swims.length };
+}
+
+function generateReport() {
+  ensureState();
   const gender = document.getElementById('repGender').value;
   const year = document.getElementById('repYear').value;
+  const season = document.getElementById('repSeason').value || seasonOf(new Date().toISOString().slice(0,10));
+  const limit = parseInt(document.getElementById('repLimit').value, 10) || 0;
   const selectedEvents = [...document.querySelectorAll('#repEventPicker input:checked')].map(i=>i.value);
   const selectedCols = [...document.querySelectorAll('#colPicker input:checked')].map(i=>i.id.replace('col_',''));
-
-  // Parse reference data
   const aFinal = parseCuts(document.getElementById('aFinalCuts').value);
   const bFinal = parseCuts(document.getElementById('bFinalCuts').value);
   const ncaaRec = parseCuts(document.getElementById('ncaaRecs').value);
-  const vr = parseCuts(document.getElementById('varsityRecs').value);
+  const yr = document.getElementById('finalsYear').value.trim();
 
-  // Filter swimmers
   let swimmers = Object.values(R.swimmers).filter(s => isActive(s));
-  if (gender !== 'all') swimmers = swimmers.filter(s=>s.gender===gender);
-  if (year !== 'all') swimmers = swimmers.filter(s=>classOf(s)===year);
-  swimmers.sort((a,b)=>a.last.localeCompare(b.last));
+  if (gender !== 'all') swimmers = swimmers.filter(s => s.gender === gender);
+  if (year !== 'all') swimmers = swimmers.filter(s => classOf(s) === year);
 
-  // Build rows grouped by event
-  const rows = []; // {event, day, name, ltbt, sbt, afinal, bfinal, ncaarec, vr}
-  selectedEvents.forEach(ev => {
-    const inEvent = swimmers.filter(s => s.events && s.events.includes(ev));
+  const rows = [];
+  const genders = gender === 'all' ? ['W', 'M'] : [gender];
+  genders.forEach(g => selectedEvents.forEach(ev => {
+    const dive = isDive(ev);
+    // who's listed: everyone with a time in this event this season, fastest first (optionally top N)
+    let inEvent = swimmers.filter(s => s.gender === g).map(s => ({ s, t: reportTimes(s, ev, season) })).filter(x => x.t.sbt);
+    inEvent.sort((a, b) => dive ? parseFloat(b.t.sbt) - parseFloat(a.t.sbt) : timeToSec(a.t.sbt) - timeToSec(b.t.sbt));
+    if (limit) inEvent = inEvent.slice(0, limit);
     if (!inEvent.length) return;
-    inEvent.forEach((s, i) => {
-      const t = (s.times||{})[ev] || {};
+    const std = (NCAA_STD[g] || {})[ev] || [];
+    const rec = (R.records || []).find(r => r.g === g && r.type === 'swim' && r.ev === ev);
+    inEvent.forEach(({ s, t }, i) => {
+      const drop = t.prior && t.sbt && !dive ? timeToSec(t.prior) - timeToSec(t.sbt) : null;
       rows.push({
-        isFirst: i===0, event: ev,
-        name: s.first+' '+s.last,
-        ltbt: t.lbt||'', sbt: t.sbt||'',
-        afinal: aFinal[ev]||'', bfinal: bFinal[ev]||'',
-        ncaarec: ncaaRec[ev]||'', vr: vr[ev]||'',
-        entries: (t.history||[]).length,
-        drop: (t.lbt&&t.sbt) ? (timeToSec(t.lbt)-timeToSec(t.sbt)).toFixed(2) : '',
-        pct: (t.lbt&&t.sbt) ? (((timeToSec(t.lbt)-timeToSec(t.sbt))/timeToSec(t.lbt))*100).toFixed(2)+'%' : ''
+        first: i === 0, last: i === inEvent.length - 1, event: ev, g,
+        name: s.first + ' ' + s.last,
+        ltbt: t.ltbt, sbt: t.sbt + (t.sbSwim && t.sbSwim.lo ? ' (LO)' : ''),
+        afinal: refFor(aFinal, g, ev), bfinal: refFor(bFinal, g, ev), ncaarec: refFor(ncaaRec, g, ev),
+        vr: rec ? rec.time : '',
+        cutA: std[0] || '', cutB: std[1] || '', cutQ: std[2] || '',
+        std: t.sbSwim ? ncaaMark(t.sbSwim) : '',
+        prior: t.prior, entries: t.n,
+        drop: drop == null ? '' : drop.toFixed(2),
+        pct: drop == null ? '' : ((drop / timeToSec(t.prior)) * 100).toFixed(2) + '%'
       });
     });
-  });
+  }));
 
-  if (!rows.length) { document.getElementById('reportStatus').innerHTML='<div class="st sterr">No swimmers matched the selected filters and events.</div>'; return; }
+  if (!rows.length) { document.getElementById('reportStatus').innerHTML='<div class="st sterr">No swimmers have times in the selected events this season.</div>'; return; }
 
-  document.getElementById('reportStatus').innerHTML='<div class="st stinfo">Building Excel file...</div>';
-
-  // Build the xlsx via Python in-browser isn't possible — use Claude API to generate a download
-  // Instead we'll build a CSV which opens perfectly in Excel
-  const colMap = {
-    ltbt:'LTBT', sbt:'SBT', afinal:'24 A Final', bfinal:'24 B Final',
-    ncaarec:'NCAA Rec', vr:'EU VR', drop:'Drop (s)', pct:'% Drop',
-    entries:'# Results', ncaacut:'NCAA Cut'
-  };
-  const headers = ['Day','Event','Racer',...selectedCols.map(c=>colMap[c]||c)];
-  const csvRows = [headers.join(',')];
-
-  // Day detection (simple — group by event order)
+  const colMap = { ltbt:'LTBT', sbt:'SBT', afinal:(yr ? yr + ' ' : '') + 'A Final', bfinal:(yr ? yr + ' ' : '') + 'B Final',
+    ncaarec:'NCAA Rec', vr:'EU VR', cutA:'NCAA A', cutB:'NCAA B', cutQ:'2026 Invite', std:'Std',
+    prior:'Best before season', drop:'Drop (s)', pct:'% Drop', entries:'# Swims' };
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const headers = [...(_currentReport === 'ncaa_cheer' ? ['Day'] : []), ...(gender === 'all' ? ['Gender'] : []), 'Event', 'Racer', ...selectedCols.map(c => colMap[c] || c)];
+  const csvRows = [headers.map(q).join(',')];
   const dayMap = buildDayMap(selectedEvents);
-
   rows.forEach(r => {
-    const day = r.isFirst ? (dayMap[r.event]||'') : '';
-    const event = r.isFirst ? r.event : '';
-    const cols = selectedCols.map(c => {
-      const v = r[c] || '';
-      return '"'+String(v).replace(/"/g,'""')+'"';
-    });
-    csvRows.push([`"${day}"`,`"${event}"`,`"${r.name}"`,...cols].join(','));
-    if (r.isFirst) csvRows.push(''); // blank row between events
+    csvRows.push([
+      ...(_currentReport === 'ncaa_cheer' ? [r.first ? (dayMap[r.event] || '') : ''] : []),
+      ...(gender === 'all' ? [r.first ? (r.g === 'W' ? 'Women' : 'Men') : ''] : []),
+      r.first ? r.event : '', r.name, ...selectedCols.map(c => r[c])
+    ].map(q).join(','));
+    if (r.last) csvRows.push('');   // blank row after each event block
   });
 
   const blob = new Blob([csvRows.join('\n')], {type:'text/csv'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   const reportName = {ncaa_cheer:'NCAA_Cheer_Sheet', uaa_cheer:'UAA_Cheer_Sheet', progress:'Season_Progress'}[_currentReport]||'Report';
-  a.download = `Emory_${reportName}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `Emory_${reportName}_${gender === 'all' ? '' : (gender === 'W' ? 'Women_' : 'Men_')}${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
-  document.getElementById('reportStatus').innerHTML='<div class="st stok">✓ Downloaded — open in Excel to format.</div>';
-}
-
-function parseCuts(text) {
-  const map = {};
-  (text||'').split('\n').forEach(line => {
-    const parts = line.split(',');
-    if (parts.length >= 2) map[parts[0].trim()] = parts.slice(1).join(',').trim();
-  });
-  return map;
+  const nEv = new Set(rows.map(r => r.g + r.event)).size;
+  document.getElementById('reportStatus').innerHTML=`<div class="st stok">✓ Downloaded — ${rows.length} rows across ${nEv} events. Open in Excel.</div>`;
+  window._lastReportCsv = csvRows.join('\n');
 }
 
 function buildDayMap(events) {
-  // Simple day grouping based on typical NCAA schedule
+  // Day grouping carried over from the original NCAA cheer sheet
   const map = {};
   const day1 = ['500 FS','200 IM','50 FS','400 MR Relay'];
   const day2 = ['400 IM','100 FL','200 FS','100 BR','100 BK','200 FR Relay','1650 FS'];
