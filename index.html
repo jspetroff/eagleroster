@@ -190,7 +190,9 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   .print-only{display:block!important;}
   .code-print{display:inline!important;font-family:var(--fm);font-weight:700;}
   .content{padding:0;max-width:none;}
-  #ttList{display:none!important;}
+  #ttList,#recList,#recBanner,#recHelp{display:none!important;}
+  table.pt.rt{font-size:10px;margin-bottom:10px;} table.pt.rt th{font-size:11px;} table.pt.rt td{padding:2px 4px;}
+  table.pt.rt td.rl{width:28%;} table.pt.rt td.n{width:40%;max-width:none;white-space:normal;}
   .ph{font-size:10px;margin-bottom:2px;} .ph b{font-size:12px;}
   .pm{font-size:8.5px;color:#333;margin-bottom:6px;line-height:1.3;}
   .pcols{column-count:3;column-gap:10px;}
@@ -265,6 +267,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div class="tab" onclick="switchTab('reports',this)">03 · Reports</div>
   <div class="tab" onclick="switchTab('relays',this)">04 · Relays</div>
   <div class="tab" onclick="switchTab('toptimes',this)">05 · Top Times</div>
+  <div class="tab" onclick="switchTab('records',this)">06 · Records</div>
 </div>
 
 <!-- ═══════════════════════════════════ TAB 1: ROSTER ═══════════════════════════════════ -->
@@ -424,6 +427,22 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div class="cgrid" id="relayGrid"></div>
 </div>
 
+<!-- ═══════════════════════════════════ TAB 6: RECORDS ═══════════════════════════════════ -->
+<div id="tab-records" class="tp content">
+  <div class="sec-hdr">
+    <h3>Team Records</h3>
+    <button class="btn bsm" onclick="printRecords()">&#128424; Print</button>
+  </div>
+  <div class="fbar">
+    <div class="fpill act" onclick="setRecG('W',this)">Women</div>
+    <div class="fpill" onclick="setRecG('M',this)">Men</div>
+  </div>
+  <div id="recBanner"></div>
+  <div id="recHelp" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Individual swimming records are checked after every import; you approve each new one. Diving and relay records are updated with Edit.</div>
+  <div class="cgrid" id="recList" style="grid-template-columns:1fr"></div>
+  <div id="recPrint" class="print-only"></div>
+</div>
+
 <!-- ═══════════════════════════════════ TAB 5: TOP TIMES ═══════════════════════════════════ -->
 <div id="tab-toptimes" class="tp content">
   <div class="sec-hdr">
@@ -457,7 +476,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div class="fpill" data-v="all" onclick="setTT('all',true,this)">All swims this season</div>
   </div>
   <div id="ttPrint" class="print-only"></div>
-  <div id="ttHelp" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Codes (click to turn each on/off): U = unrested · UwS = unrested, suited · S = shaved. <span class="badge pbb">PB</span> = lifetime best · <span class="badge vrb">VR</span> = broke team record · <span class="badge std stdA">A</span> <span class="badge std stdQ">Q</span> <span class="badge std stdB">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · <span class="badge lo">LO</span> = relay lead-off.</div>
+  <div id="ttHelp" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Codes (click to turn each on/off): U = unrested · UwS = unrested, suited · S = shaved. <span class="badge pbb">PB</span> = lifetime best · <span class="badge vrb">VR</span> = set a team record · <span class="badge std stdA">A</span> <span class="badge std stdQ">Q</span> <span class="badge std stdB">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · <span class="badge lo">LO</span> = relay lead-off.</div>
   <div class="tt-grid" id="ttList"></div>
 </div>
 
@@ -504,6 +523,34 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
       <button class="btn" onclick="closeSwimmerModal()">Cancel</button>
       <button class="btn bdanger bsm" id="deleteSwimmerBtn" onclick="deleteCurrentSwimmer()" style="display:none">Delete</button>
       <button class="btn bprimary" onclick="saveSwimmer()">Save Swimmer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ RECORD APPROVAL POP-UP ═══════ -->
+<div class="modal" id="recApproveModal">
+  <div class="modal-box">
+    <div class="modal-hdr"><h2>&#127942; Possible new team record</h2><button class="modal-close" onclick="closeRecordApprovals()">&#x2715;</button></div>
+    <p style="font-size:.78rem;color:var(--text-dim);margin-bottom:1rem">These imported swims beat a current Emory record. Approve to update the Records page (the old record is kept as history), or reject if the time is wrong.</p>
+    <div id="recApproveList"></div>
+    <button class="btn" style="width:100%" onclick="closeRecordApprovals()">Decide later</button>
+  </div>
+</div>
+
+<!-- ═══════ RECORD EDIT MODAL ═══════ -->
+<div class="modal" id="recEditModal">
+  <div class="modal-box">
+    <div class="modal-hdr"><h2 id="recEditTitle">Edit record</h2><button class="modal-close" onclick="document.getElementById('recEditModal').classList.remove('open')">&#x2715;</button></div>
+    <div class="frow f2">
+      <div><label id="recTimeLabel">Time</label><input id="recTime" type="text"></div>
+      <div><label>Date</label><input id="recDate" type="date"></div>
+    </div>
+    <div class="frow"><div><label id="recWhoLabel">Swimmer</label><input id="recWho" type="text"></div></div>
+    <div class="frow"><div><label>Meet</label><input id="recMeet" type="text"></div></div>
+    <label class="check-item" style="margin:.25rem 0 1rem"><input type="checkbox" id="recIsNew"> This is a new record — keep the current one as history</label>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn" onclick="document.getElementById('recEditModal').classList.remove('open')">Cancel</button>
+      <button class="btn bprimary" onclick="saveRecordEdit()">Save</button>
     </div>
   </div>
 </div>
@@ -645,6 +692,7 @@ function switchTab(id, el) {
   if (id==='relays') renderRelays();
   if (id==='reports') renderReportEvents();
   if (id==='toptimes') renderTopTimes();
+  if (id==='records') renderRecords();
 }
 
 // ── ROSTER RENDERING ──────────────────────────────────────────────────────
@@ -892,8 +940,10 @@ function ensureState() {
   R.swims = R.swims || [];
   R.meetCodes = R.meetCodes || {};
   R.aliases = R.aliases || {};
+  let seeded = false;
+  if (!R.records) { R.records = seedRecords(); R.recordRejected = []; seeded = true; }
   const end = seasonEndYear(), off = { SR: 0, JR: 1, SO: 2, FR: 3 };
-  let changed = false;
+  let changed = seeded;
   Object.values(R.swimmers).forEach(s => {
     if (s.gradYear === undefined && s.year in off) { s.gradYear = end + off[s.year]; changed = true; }
     if (s.year === 'GS' && !s.gs) { s.gs = true; changed = true; }
@@ -1377,6 +1427,7 @@ function applyImport() {
   renderAll();
   showParseStatus(`✓ ${added} new swims imported · ${pbs} lifetime best${pbs===1?'':'s'} · ${newBests} new season bests` +
     (dupes ? ` · ${dupes} already in EagleRoster` : '') + (skipped ? ` · ${skipped} skipped` : ''), 'ok');
+  showRecordApprovals();   // any new team records? ask before they count
 }
 
 // Recode a whole meet: the meet's default code and every swim from it (including any changed one by one)
@@ -1489,7 +1540,7 @@ function printTopTimes() {
   document.getElementById('ttPrint').innerHTML =
     `<div class="ph"><b>Emory Swimming &amp; Diving — ${_tt.gender==='W'?'Women':'Men'}'s ${_tt.kind==='split'?'Relay Split':'Individual'} Top Times</b>
        &nbsp;${_tt.season} · ${_tt.view==='name'?'by name':'by event'} · ${codeTxt} · printed ${new Date().toLocaleDateString()}</div>
-     <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · <span class="pbm">PB</span> = lifetime best · <span class="pbm vrm">VR</span> = broke team record · <span class="pbm stdm">A</span> <span class="pbm stdm">Q</span> <span class="pbm stdm">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · LO = relay lead-off · * = tie</div>
+     <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · <span class="pbm">PB</span> = lifetime best · <span class="pbm vrm">VR</span> = set a team record · <span class="pbm stdm">A</span> <span class="pbm stdm">Q</span> <span class="pbm stdm">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · LO = relay lead-off · * = tie</div>
      <div class="pcols ${_tt.view==='name'?'':'pcols2'}">${body}</div>`;
   window.print();
 }
@@ -1533,7 +1584,7 @@ function renderTopTimesByName(byEvent, events) {
 
 function renderTopTimes() {
   ensureState();
-  _vr = recordBreaks();
+  _vr = recordSwimIds();
   const list = document.getElementById('ttList');
   const sel = document.getElementById('ttSeason');
   const seasons = [...new Set(R.swims.map(s => seasonOf(s.date)))].sort().reverse();
@@ -1797,38 +1848,203 @@ function ncaaMark(s) {
 }
 
 
-// ── EMORY TEAM RECORDS (individual swimming, updated July 2026) ───────────
-const TEAM_RECORDS_ASOF = '2026-07-31';
-const TEAM_RECORDS = {
-  W: { '50 FS':['22.48','Fiona Muir'], '100 FS':['49.28','Fiona Muir'], '200 FS':['1:46.82','Cindy Cheng'],
-       '500 FS':['4:47.04','Liz Horvat'], '1000 FS':['9:57.52','Liz Horvat'], '1650 FS':['16:27.82','Julia Durmer'],
-       '100 BK':['53.65','Cindy Cheng'], '200 BK':['1:56.63','Cindy Cheng'],
-       '100 BR':['1:01.26','Katie Cohen'], '200 BR':['2:11.80','Katie Cohen'],
-       '100 FL':['54.14','Taylor Leone'], '200 FL':['2:00.25','Elodie Mitchell'],
-       '200 IM':['2:00.28','Allison Greeneway'], '400 IM':['4:15.02','Liz Horvat'] },
-  M: { '50 FS':['19.37','Oliver Smith'], '100 FS':['42.98','Oliver Smith'], '200 FS':['1:35.92','Pat Pema'],
-       '500 FS':['4:20.41','Pat Pema'], '1000 FS':['9:12.62','Thomas Gordon'], '1650 FS':['15:12.80','Thomas Gordon'],
-       '100 BK':['47.39','Ryan Soh'], '200 BK':['1:45.34','Sven Becker'],
-       '100 BR':['50.94','Andrew Wilson'], '200 BR':['1:50.80','Andrew Wilson'],
-       '100 FL':['47.21','Ryan Soh'], '200 FL':['1:45.43','Patrick Augustyn'],
-       '200 IM':['1:44.18','Andrew Wilson'], '400 IM':['3:49.21','Crow Thorsen'] },
+// ── TEAM RECORDS ──────────────────────────────────────────────────────────
+// Seeded once from the July 2026 record sheets; after that R.records (Firebase) is the source of truth.
+// type: 'swim' (auto-checked against imported swims), 'dive' and 'relay' (edited by hand).
+const RECORD_SEED_ASOF = 'July 2026';
+const RECORD_SEED = {
+  W: [
+    ['swim','50 FS','22.48','Fiona Muir','2018-03-21','NCAA Championships'],
+    ['swim','100 FS','49.28','Fiona Muir','2017-03-15','NCAA Championships'],
+    ['swim','200 FS','1:46.82','Cindy Cheng','2017-03-15','NCAA Championships'],
+    ['swim','500 FS','4:47.04','Liz Horvat','2009-03-18','NCAA Championships'],
+    ['swim','1000 FS','9:57.52','Liz Horvat','2009-03-18','NCAA Championships'],
+    ['swim','1650 FS','16:27.82','Julia Durmer','2017-03-15','NCAA Championships'],
+    ['swim','100 BK','53.65','Cindy Cheng','2018-03-21','NCAA Championships'],
+    ['swim','200 BK','1:56.63','Cindy Cheng','2017-11-30','Miami Invitational'],
+    ['swim','100 BR','1:01.26','Katie Cohen','2026-03-20','NCAA Championships'],
+    ['swim','200 BR','2:11.80','Katie Cohen','2026-03-21','NCAA Championships'],
+    ['swim','100 FL','54.14','Taylor Leone','2022-03-16','NCAA Championships'],
+    ['swim','200 FL','2:00.25','Elodie Mitchell','2024-12-05','Denison Invitational'],
+    ['swim','200 IM','2:00.28','Allison Greeneway','2025-02-01','vs. UGA'],
+    ['swim','400 IM','4:15.02','Liz Horvat','2011-03-23','NCAA Championships'],
+    ['dive','1-Meter (6 Dives)','305.85','Tess Klugherz','2023-01-14','vs. Emmanuel'],
+    ['dive','1-Meter (11 Dives)','545.77','Ariana Khan','2023-01-14','vs. Emmanuel'],
+    ['dive','3-Meter (6 Dives)','332.33','Tess Klugherz','2023-01-14','vs. Emmanuel'],
+    ['dive','3-Meter (11 Dives)','509.03','Ariana Khan','2023-03-16','NCAA Championships'],
+    ['relay','200 Free Relay','1:30.44','Caroline Maki, Cailen Chinn, Zoe Walker, Taylor Leone','2022-03-16','NCAA Championships'],
+    ['relay','400 Free Relay','3:18.46','Fiona Muir, Cindy Cheng, Ming Ong, Meg Taylor','2018-03-21','NCAA Championships'],
+    ['relay','800 Free Relay','7:13.51','Fiona Muir, Julia Wawer, Meg Taylor, Cindy Cheng','2018-03-21','NCAA Championships'],
+    ['relay','200 Medley Relay','1:39.55','Megan Jungers, Anna Glowniak, Taylor Leone, Caroline Maki','2023-03-16','NCAA Championships'],
+    ['relay','400 Medley Relay','3:38.38','Megan Jungers, Edie Bates, Taylor Leone, Caroline Maki','2022-03-16','NCAA Championships'],
+  ],
+  M: [
+    ['swim','50 FS','19.37','Oliver Smith','2018-03-21','NCAA Championships'],
+    ['swim','100 FS','42.98','Oliver Smith','2018-03-21','NCAA Championships'],
+    ['swim','200 FS','1:35.92','Pat Pema','2022-12-01','Denison Invitational'],
+    ['swim','500 FS','4:20.41','Pat Pema','2023-03-15','NCAA Championships'],
+    ['swim','1000 FS','9:12.62','Thomas Gordon','2017-03-15','NCAA Championships'],
+    ['swim','1650 FS','15:12.80','Thomas Gordon','2017-03-15','NCAA Championships'],
+    ['swim','100 BK','47.39','Ryan Soh','2023-11-30','Denison Invitational'],
+    ['swim','200 BK','1:45.34','Sven Becker','2022-12-01','Denison Invitational'],
+    ['swim','100 BR','50.94','Andrew Wilson','2017-03-15','NCAA Championships'],
+    ['swim','200 BR','1:50.80','Andrew Wilson','2017-03-15','NCAA Championships'],
+    ['swim','100 FL','47.21','Ryan Soh','2021-12-02','Denison Invitational'],
+    ['swim','200 FL','1:45.43','Patrick Augustyn','2012-03-21','NCAA Championships'],
+    ['swim','200 IM','1:44.18','Andrew Wilson','2017-03-15','NCAA Championships'],
+    ['swim','400 IM','3:49.21','Crow Thorsen','2024-12-05','Denison Invitational'],
+    ['dive','1-Meter (6 Dives)','334.20','Lucas Bumgarner','2019-10-26','vs. Birmingham-So.'],
+    ['dive','1-Meter (11 Dives)','612.85','Lucas Bumgarner','2023-02-17','Emory Invitational'],
+    ['dive','3-Meter (6 Dives)','366.68','Lucas Bumgarner','2019-01-26','vs. Centre'],
+    ['dive','3-Meter (11 Dives)','615.60','Lucas Bumgarner','2020-02-12','UAA Championships'],
+    ['relay','200 Free Relay','1:18.57','Sage Ono, Trey Kolleck, Aaron Schwartz, Oliver Smith','2018-03-21','NCAA Championships'],
+    ['relay','400 Free Relay','2:56.04',"Nicholas Goudie, Pat Pema, Logan D'Amore, Colin LaFave",'2022-03-16','NCAA Championships'],
+    ['relay','800 Free Relay','6:26.98','Nicholas Goudie, Crow Thorsen, Jason Hamilton, Pat Pema','2023-03-15','NCAA Championships'],
+    ['relay','200 Medley Relay','1:25.85','Ryan Soh, Jake Meyer, Jeff Echols, Colin LaFave','2023-03-15','NCAA Championships'],
+    ['relay','400 Medley Relay','3:10.40','Ryan Soh, Jake Meyer, Jeff Echols, Nicholas Goudie','2024-03-20','NCAA Championships'],
+  ],
 };
-// Swims (individual + lead-offs) that broke the team record at the time they were swum.
-// Walks swims in date order so a record broken earlier this season becomes the bar for later swims.
-function recordBreaks() {
-  const out = new Set(), cur = {};
-  (R.swims || []).filter(s => s.kind === 'ind' && s.date > TEAM_RECORDS_ASOF && R.swimmers[s.sid])
-    .map(s => ({ s, g: R.swimmers[s.sid].gender, t: timeToSec(s.time) }))
-    .sort((a, b) => a.s.date.localeCompare(b.s.date) || b.t - a.t)
-    .forEach(({ s, g, t }) => {
-      const base = (TEAM_RECORDS[g] || {})[s.event];
-      if (!base) return;
-      const k = g + '|' + s.event;
-      if (cur[k] === undefined) cur[k] = timeToSec(base[0]);
-      if (t < cur[k]) { out.add(s.id); cur[k] = t; }
-    });
+const REC_EV_LABEL = ev => ev.replace(/ FS$/, ' Free').replace(/ BK$/, ' Back').replace(/ BR$/, ' Breast').replace(/ FL$/, ' Fly').replace(/^(\d+)/, n => (+n).toLocaleString('en-US')) + (/ (FS|BK|BR|FL|IM)$/.test(ev) ? '' : '');
+const recLabel = r => r.type === 'swim' ? REC_EV_LABEL(r.ev).replace(/^([\d,]+) /, '$1-Yard ').replace(/ IM$/, ' Individual Medley').replace(/ Free$/, ' Freestyle').replace(/ Back$/, ' Backstroke').replace(/ Breast$/, ' Breaststroke').replace(/ Fly$/, ' Butterfly')
+  : r.type === 'relay' ? r.ev.replace(/^(\d+) Free Relay$/, '$1-Yard Freestyle Relay').replace(/^(\d+) Medley Relay$/, '$1-Yard Medley Relay') : r.ev;
+
+function seedRecords() {
+  const out = [];
+  ['W', 'M'].forEach(g => RECORD_SEED[g].forEach(([type, ev, time, who, date, meet]) =>
+    out.push({ id: g + '|' + ev, g, type, ev, time, who, date, meet, swimId: null, hist: [] })));
   return out;
 }
+
+// Imported swims that beat a current individual record and haven't been approved or rejected.
+// Per record: the chain of swims that broke it in date order (each one beating the one before).
+function recordCandidates() {
+  const rej = new Set(R.recordRejected || []), out = [];
+  (R.records || []).filter(r => r.type === 'swim').forEach(r => {
+    let bar = timeToSec(r.time);
+    const chain = [];
+    (R.swims || []).filter(s => s.kind === 'ind' && s.event === r.ev && !rej.has(s.id) && s.id !== r.swimId &&
+        R.swimmers[s.sid] && R.swimmers[s.sid].gender === r.g && s.date >= (r.date || ''))
+      .map(s => ({ s, t: timeToSec(s.time) }))
+      .sort((a, b) => a.s.date.localeCompare(b.s.date) || b.t - a.t)
+      .forEach(({ s, t }) => { if (t < bar) { chain.push(s); bar = t; } });
+    if (chain.length) out.push({ rec: r, chain });
+  });
+  return out;
+}
+
+// Swims that set an approved record (current holders + history) → VR tag on Top Times
+function recordSwimIds() {
+  const ids = new Set();
+  (R.records || []).forEach(r => { if (r.swimId) ids.add(r.swimId); (r.hist || []).forEach(x => x.swimId && ids.add(x.swimId)); });
+  return ids;
+}
+
+const recFmtDate = d => d ? `${+d.slice(5, 7)}-${+d.slice(8, 10)}-${d.slice(0, 4)}` : '';
+const swimmerName = sid => { const s = R.swimmers[sid]; return s ? `${s.first} ${s.last}` : '?'; };
+
+function approveRecord(i) {
+  const c = (window._recCands || [])[i];
+  if (!c) return;
+  const r = R.records.find(x => x.id === c.rec.id);
+  c.chain.forEach(s => {
+    r.hist = r.hist || [];
+    r.hist.unshift({ time: r.time, who: r.who, date: r.date, meet: r.meet, swimId: r.swimId });
+    Object.assign(r, { time: s.time, who: swimmerName(s.sid), date: s.date, meet: s.meet, swimId: s.id });
+  });
+  save(); showRecordApprovals(); renderRecordsIfOpen();
+}
+function rejectRecord(i) {
+  const c = (window._recCands || [])[i];
+  if (!c) return;
+  R.recordRejected = (R.recordRejected || []).concat(c.chain.map(s => s.id));
+  save(); showRecordApprovals(); renderRecordsIfOpen();
+}
+
+// Pop-up: one card per broken record, Approve / Reject / Decide later
+function showRecordApprovals() {
+  const cands = window._recCands = recordCandidates();
+  const box = document.getElementById('recApproveList');
+  if (!cands.length) { closeRecordApprovals(); return false; }
+  box.innerHTML = cands.map((c, i) => {
+    const r = c.rec, last = c.chain[c.chain.length - 1];
+    const earlier = c.chain.slice(0, -1).map(s => `${esc(s.time)} ${esc(swimmerName(s.sid))} (${recFmtDate(s.date)})`).join(', ');
+    return `<div class="card" style="margin-bottom:.75rem">
+      <div class="ct">${r.g === 'W' ? 'Women' : 'Men'} · ${esc(recLabel(r))}</div>
+      <div style="font-size:.95rem;font-weight:700">${esc(swimmerName(last.sid))} <span class="ttime pr" style="font-size:.95rem">${esc(last.time)}</span>${last.lo ? ' <span class="badge lo">LO</span>' : ''}</div>
+      <div style="font-size:.75rem;color:var(--text-dim);margin:.2rem 0 .6rem">${esc(last.meet)} · ${recFmtDate(last.date)}<br>
+        Current record: ${esc(r.time)} ${esc(r.who)} (${recFmtDate(r.date)})${earlier ? `<br>Also broke it earlier: ${earlier}` : ''}</div>
+      <div style="display:flex;gap:.5rem"><button class="btn bprimary bsm" onclick="approveRecord(${i})">Approve new record</button>
+        <button class="btn bdanger bsm" onclick="rejectRecord(${i})">Reject</button></div></div>`;
+  }).join('');
+  document.getElementById('recApproveModal').classList.add('open');
+  return true;
+}
+function closeRecordApprovals() { document.getElementById('recApproveModal').classList.remove('open'); renderRecordsIfOpen(); }
+
+// ── Records tab ──
+let _recG = 'W';
+function setRecG(g, el) { _recG = g; el.parentNode.querySelectorAll('.fpill').forEach(p => p.classList.remove('act')); el.classList.add('act'); renderRecords(); }
+function renderRecordsIfOpen() { if (document.getElementById('tab-records').classList.contains('act')) renderRecords(); }
+
+function renderRecords() {
+  ensureState();
+  const cands = recordCandidates();
+  document.getElementById('recBanner').innerHTML = cands.length
+    ? `<div class="st stinfo" style="display:flex;justify-content:space-between;align-items:center">${cands.length} possible new record${cands.length > 1 ? 's' : ''} waiting for approval <button class="btn bsm bprimary" onclick="showRecordApprovals()">Review</button></div>` : '';
+  const recs = (R.records || []).filter(r => r.g === _recG);
+  const section = (type, title) => {
+    const rows = recs.filter(r => r.type === type);
+    return `<div class="card"><div class="ct">${title}</div><table class="tbl"><tbody>${rows.map(r => {
+      const i = R.records.indexOf(r), prev = (r.hist || [])[0];
+      return `<tr><td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(recLabel(r))}</td>
+        <td class="ttime" style="white-space:nowrap">${esc(r.time)}${r.swimId && seasonOf(r.date) === seasonOf(new Date().toISOString().slice(0,10)) ? '<span class="badge vrb">NEW</span>' : ''}</td>
+        <td style="font-size:.8rem">${esc(r.who)}${prev ? `<div class="tt-meet">prev ${esc(prev.time)} ${esc(prev.who)} (${prev.date ? prev.date.slice(0,4) : ''})</div>` : ''}</td>
+        <td class="tt-meet" style="white-space:nowrap">${recFmtDate(r.date)}</td><td class="tt-meet">${esc(r.meet)}</td>
+        <td style="text-align:right"><button class="btn bsm" onclick="openRecordEdit(${i})">Edit</button></td></tr>`;
+    }).join('')}</tbody></table></div>`;
+  };
+  document.getElementById('recList').innerHTML = section('swim', 'Individual') + section('dive', 'Diving') + section('relay', 'Relays');
+}
+
+let _recEdit = null;
+function openRecordEdit(i) {
+  const r = R.records[i]; if (!r) return;
+  _recEdit = i;
+  document.getElementById('recEditTitle').textContent = `${r.g === 'W' ? 'Women' : 'Men'} · ${recLabel(r)}`;
+  document.getElementById('recTime').value = r.time;
+  document.getElementById('recWho').value = r.who;
+  document.getElementById('recDate').value = r.date || '';
+  document.getElementById('recMeet').value = r.meet || '';
+  document.getElementById('recIsNew').checked = false;
+  document.getElementById('recWhoLabel').textContent = r.type === 'relay' ? 'Swimmers (in order)' : r.type === 'dive' ? 'Diver' : 'Swimmer';
+  document.getElementById('recTimeLabel').textContent = r.type === 'dive' ? 'Score' : 'Time';
+  document.getElementById('recEditModal').classList.add('open');
+}
+function saveRecordEdit() {
+  const r = R.records[_recEdit]; if (!r) return;
+  const v = id => document.getElementById(id).value.trim();
+  if (!v('recTime') || !v('recWho')) { alert('Time/score and name are required.'); return; }
+  if (document.getElementById('recIsNew').checked) {
+    r.hist = r.hist || [];
+    r.hist.unshift({ time: r.time, who: r.who, date: r.date, meet: r.meet, swimId: r.swimId });
+    r.swimId = null;
+  }
+  Object.assign(r, { time: v('recTime'), who: v('recWho'), date: v('recDate'), meet: v('recMeet') });
+  document.getElementById('recEditModal').classList.remove('open');
+  save(); renderRecords();
+}
+
+function printRecords() {
+  renderRecords();
+  const recs = (R.records || []).filter(r => r.g === _recG);
+  const tbl = (type, title) => `<table class="pt rt"><tr><th colspan="4">${title}</th></tr>${recs.filter(r => r.type === type).map(r =>
+    `<tr><td class="rl">${esc(recLabel(r))}</td><td class="r"><b>${esc(r.time)}</b></td><td class="n">${esc(r.who)}</td><td>${recFmtDate(r.date)} ${esc(r.meet)}</td></tr>`).join('')}</table>`;
+  document.getElementById('recPrint').innerHTML =
+    `<div class="ph"><b>Emory ${_recG === 'W' ? "Women's" : "Men's"} Swimming &amp; Diving Records</b> &nbsp;printed ${new Date().toLocaleDateString()}</div>
+     ${tbl('swim', 'Individual')}${tbl('dive', 'Diving')}${tbl('relay', 'Relays')}`;
+  window.print();
+}
+
 let _vr = new Set();
 
 const RELAY_DEFS = [
@@ -2178,6 +2394,8 @@ document.addEventListener('DOMContentLoaded', init);
 document.addEventListener('click', e => {
   if (e.target === document.getElementById('swimmerModal')) closeSwimmerModal();
   if (e.target === document.getElementById('detailModal')) closeDetailModal();
+  if (e.target === document.getElementById('recApproveModal')) closeRecordApprovals();
+  if (e.target === document.getElementById('recEditModal')) e.target.classList.remove('open');
 });
 </script>
 </body>
