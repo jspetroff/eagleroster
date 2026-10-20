@@ -906,18 +906,30 @@ function openDetail(id) {
   document.getElementById('detailMeta').innerHTML = `${classBadge(s)}${s.gradYear?` Class of ${s.gradYear} ·`:''} ${s.gender==='W'?'Women':'Men'} · ${s.specialty||''} ${scLink}`;
 
   const times = s.times || {};
+  // Every championship event for their discipline (so you can star one they haven't swum yet), plus anything else they have a time in
+  const stars = s.champStars || [];
+  const base = isDiver(s) ? ['1m Springboard', '3m Springboard'] : SC_EVENTS.filter(e => e !== '1000 FS');
+  const evs = [...new Set([...base, ...Object.keys(times).filter(e => EVENTS_IND.includes(e))])]
+    .sort((a, b) => (stars.includes(b) - stars.includes(a)) || (EVENTS_IND.indexOf(a) - EVENTS_IND.indexOf(b)));
+  const day = (m, ev) => { const d = champDay(m, s.gender, ev); return d ? 'D' + d : '—'; };
+  let h = `<div style="font-size:.7rem;color:var(--text-dim);margin-bottom:.35rem">Tap ☆ to mark possible championship events. Days are from the 2026 UAA and NCAA schedules.</div>
+    <table class="tbl"><thead><tr><th style="width:1.5rem"></th><th>Event</th><th>SBT</th><th>LBT</th><th>UAA</th><th>NCAA</th><th>Swims</th></tr></thead><tbody>`;
+  evs.forEach(ev => {
+    const t = times[ev] || {}, on = stars.includes(ev), n = (t.history || []).length;
+    h += `<tr${on ? ' style="background:rgba(212,175,55,.08)"' : ''}>
+      <td><button onclick="toggleChampStar('${esc(ev)}')" title="${on ? 'Unstar' : 'Star as a possible championship event'}" style="background:none;border:none;cursor:pointer;font-size:1rem;line-height:1;padding:0;color:${on ? 'var(--gold)' : 'var(--text-dim)'}">${on ? '★' : '☆'}</button></td>
+      <td${on ? ' style="font-weight:600"' : ''}>${esc(ev)}</td>
+      <td class="ttime sb">${t.sbt || '—'}</td>
+      <td class="ttime lb">${t.lbt || '—'}</td>
+      <td class="ttime">${day('UAA', ev)}</td>
+      <td class="ttime">${day('NCAA', ev)}</td>
+      <td style="font-size:.72rem;color:var(--text-dim)">${n || ''}</td></tr>`;
+  });
+  h += '</tbody></table>';
   if (!Object.keys(times).length) {
-    document.getElementById('detailTimes').innerHTML = '<div style="color:var(--text-dim);font-size:.82rem;padding:1rem 0">No times logged yet. Upload results or add manually.</div>';
+    h += '<div style="color:var(--text-dim);font-size:.82rem;padding:1rem 0">No times logged yet. Upload results or add manually.</div>';
+    document.getElementById('detailTimes').innerHTML = h;
   } else {
-    let h = '<table class="tbl"><thead><tr><th>Event</th><th>SBT</th><th>LBT</th><th>Entries</th></tr></thead><tbody>';
-    Object.keys(times).sort().forEach(ev => {
-      const t = times[ev];
-      h += `<tr><td>${esc(ev)}</td>
-        <td class="ttime sb">${t.sbt||'—'}</td>
-        <td class="ttime lb">${t.lbt||'—'}</td>
-        <td style="font-size:.72rem;color:var(--text-dim)">${(t.history||[]).length} result${(t.history||[]).length!==1?'s':''}</td></tr>`;
-    });
-    h += '</tbody></table>';
     // Meet history
     h += '<div style="margin-top:1rem"><div class="ct">Result History</div>';
     const allHistory = [];
@@ -939,6 +951,16 @@ function openDetail(id) {
 }
 
 function closeDetailModal() { document.getElementById('detailModal').classList.remove('open'); }
+
+// Star / unstar a possible championship event (planning only)
+function toggleChampStar(ev) {
+  const s = R.swimmers[_currentDetailId]; if (!s) return;
+  const st = s.champStars = s.champStars || [];
+  const i = st.indexOf(ev);
+  if (i >= 0) st.splice(i, 1); else st.push(ev);
+  save();
+  openDetail(s.id);
+}
 
 // ── TIMES / RESULTS IMPORT (Team Manager top-times PDFs) ─────────────────
 const REST_CODES = ['U','UwS','S'];
@@ -2037,10 +2059,9 @@ function generateReport() {
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const headers = [...(_currentReport === 'ncaa_cheer' ? ['Day'] : []), ...(gender === 'all' ? ['Gender'] : []), 'Event', 'Racer', ...selectedCols.map(c => colMap[c] || c)];
   const csvRows = [headers.map(q).join(',')];
-  const dayMap = buildDayMap(selectedEvents);
   rows.forEach(r => {
     csvRows.push([
-      ...(_currentReport === 'ncaa_cheer' ? [r.first ? (dayMap[r.event] || '') : ''] : []),
+      ...(_currentReport === 'ncaa_cheer' ? [r.first ? ((d => d ? 'Day ' + d : '')(champDay('NCAA', r.g, r.event))) : ''] : []),
       ...(gender === 'all' ? [r.first ? (r.g === 'W' ? 'Women' : 'Men') : ''] : []),
       r.first ? r.event : '', r.name, ...selectedCols.map(c => r[c])
     ].map(q).join(','));
@@ -2059,19 +2080,28 @@ function generateReport() {
   window._lastReportCsv = csvRows.join('\n');
 }
 
-function buildDayMap(events) {
-  // Day grouping carried over from the original NCAA cheer sheet
-  const map = {};
-  const day1 = ['500 FS','200 IM','50 FS','400 MR Relay'];
-  const day2 = ['400 IM','100 FL','200 FS','100 BR','100 BK','200 FR Relay','1650 FS'];
-  const day3 = ['200 BK','100 FS','200 BR','200 FL','400 FR Relay'];
-  events.forEach(ev => {
-    if (day1.includes(ev)) map[ev]='Day 1';
-    else if (day2.includes(ev)) map[ev]='Day 2';
-    else if (day3.includes(ev)) map[ev]='Day 3';
-    else map[ev]='Day 4';
-  });
-  return map;
+// ── CHAMPIONSHIP DAYS ─────────────────────────────────────────────────────
+// Read from the 2026 UAA (Feb 11–14) and NCAA DIII (Mar 18–21) results files.
+// Diving boards fall on different days for men and women, so diving is keyed by gender.
+const CHAMP_DAYS = {
+  UAA: {
+    swim: { '800 FR Relay':1,
+      '500 FS':2, '200 IM':2, '50 FS':2, '200 FR Relay':2, '400 MR Relay':2,
+      '400 IM':3, '100 FL':3, '200 FS':3, '100 BR':3, '100 BK':3, '200 MR Relay':3,
+      '1650 FS':4, '200 BK':4, '100 FS':4, '200 BR':4, '200 FL':4, '400 FR Relay':4 },
+    dive: { M: { '3m Springboard':1, '1m Springboard':3 }, W: { '1m Springboard':2, '3m Springboard':4 } }
+  },
+  NCAA: {
+    swim: { '500 FS':1, '200 IM':1, '50 FS':1, '400 MR Relay':1,
+      '400 IM':2, '100 FL':2, '200 FS':2, '200 FR Relay':2,
+      '100 BK':3, '100 BR':3, '200 FL':3, '200 MR Relay':3, '800 FR Relay':3,
+      '100 FS':4, '1650 FS':4, '200 BK':4, '200 BR':4, '400 FR Relay':4 },
+    dive: { M: { '3m Springboard':1, '1m Springboard':3 }, W: { '1m Springboard':2, '3m Springboard':4 } }
+  }
+};
+function champDay(meet, g, ev) {
+  const t = CHAMP_DAYS[meet]; if (!t) return null;
+  return isDive(ev) ? ((t.dive[g] || {})[ev] || null) : (t.swim[ev] || null);
 }
 
 // ── RELAY BUILDER ─────────────────────────────────────────────────────────
