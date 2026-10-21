@@ -194,7 +194,8 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   .print-only{display:block!important;}
   .code-print{display:inline!important;font-family:var(--fm);font-weight:700;}
   .content{padding:0;max-width:none;}
-  #ttList,#recList,#recBanner,#recHelp{display:none!important;}
+  #ttList,#recList,#recBanner,#recHelp,#stdList,#stdNote{display:none!important;}
+  table.pt.st{font-size:9.5px;margin-bottom:10px;} table.pt.st td{padding:2px 4px;} table.pt.st td.n{width:auto;max-width:none;white-space:normal;}
   table.pt.rt{font-size:10px;margin-bottom:10px;} table.pt.rt th{font-size:11px;} table.pt.rt td{padding:2px 4px;}
   table.pt.rt td.rl{width:28%;} table.pt.rt td.n{width:40%;max-width:none;white-space:normal;}
   .ph{font-size:10px;margin-bottom:2px;} .ph b{font-size:12px;}
@@ -276,6 +277,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div class="tab" onclick="switchTab('relays',this)">04 · Relays</div>
   <div class="tab" onclick="switchTab('toptimes',this)">05 · Top Times</div>
   <div class="tab" onclick="switchTab('records',this)">06 · Records</div>
+  <div class="tab" onclick="switchTab('standards',this)">07 · Standards</div>
 </div>
 
 <!-- ═══════════════════════════════════ TAB 1: ROSTER ═══════════════════════════════════ -->
@@ -397,7 +399,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
       </div>
       <div class="card" style="margin-top:1rem">
         <div class="ct">Reference Data (saved)</div>
-        <p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.75rem">Already built in: SBT from imported meets, LTBT, NCAA A/B cuts and 2026 invite times, and EU varsity records from the Records tab. Paste the rest below, one per line, e.g. <code style="font-family:var(--fm)">W 500 Free,4:52.10</code> (start with W or M; without it the line applies to both).</p>
+        <p style="font-size:.78rem;color:var(--text-dim);margin-bottom:.75rem">Already built in: SBT from imported meets, LTBT, NCAA A/B cuts and 2026 invite times, EU varsity records from the Records tab, and NCAA DIII records from the Standards tab. Paste the rest below, one per line, e.g. <code style="font-family:var(--fm)">W 500 Free,4:52.10</code> (start with W or M; without it the line applies to both).</p>
         <div class="frow f2">
           <div><label>Prior-year NCAA finals (year)</label><input id="finalsYear" type="text" placeholder="2026" oninput="saveReportRef()"></div>
           <div><label>&nbsp;</label><button class="btn" style="width:100%" onclick="document.getElementById('finalsFile').click()">&#8679; Load A/B final cuts from NCAA results</button>
@@ -407,7 +409,6 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
           <div><label>A Final cuts (8th place, prior year)</label><textarea id="aFinalCuts" rows="3" placeholder="W 500 FS,4:52.10&#10;M 500 FS,4:28.39" oninput="saveReportRef()"></textarea></div>
           <div><label>B Final cuts (16th place, prior year)</label><textarea id="bFinalCuts" rows="3" placeholder="W 500 FS,4:56.00&#10;M 500 FS,4:31.27" oninput="saveReportRef()"></textarea></div>
         </div>
-        <div><label>NCAA DIII Records</label><textarea id="ncaaRecs" rows="3" placeholder="W 500 FS,4:40.15&#10;M 500 FS,4:18.35" oninput="saveReportRef()"></textarea></div>
         <div id="refStatus" style="font-size:.72rem;font-family:var(--fm);color:var(--text-dim);margin-top:.5rem"></div>
       </div>
       <button class="btn bprimary" style="width:100%;margin-top:1rem;padding:.75rem" onclick="generateReport()">&#8681; Generate &amp; Download Excel</button>
@@ -464,6 +465,21 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div id="recHelp" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Individual swimming records are checked after every import; you approve each new one. Diving and relay records are updated with Edit.</div>
   <div class="cgrid" id="recList" style="grid-template-columns:1fr"></div>
   <div id="recPrint" class="print-only"></div>
+</div>
+
+<!-- ═══════════════════════════════════ TAB 7: STANDARDS ═══════════════════════════════════ -->
+<div id="tab-standards" class="tp content">
+  <div class="sec-hdr">
+    <h3>NCAA Standards &amp; Records</h3>
+    <button class="btn bsm" onclick="printStandards()">&#128424; Print</button>
+  </div>
+  <div class="fbar">
+    <div class="fpill act" onclick="setStdG('W',this)">Women</div>
+    <div class="fpill" onclick="setStdG('M',this)">Men</div>
+  </div>
+  <div id="stdNote" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)"></div>
+  <div id="stdList"></div>
+  <div id="stdPrint" class="print-only"></div>
 </div>
 
 <!-- ═══════════════════════════════════ TAB 5: TOP TIMES ═══════════════════════════════════ -->
@@ -572,6 +588,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
       <div><label>Date</label><input id="recDate" type="date"></div>
     </div>
     <div class="frow"><div><label id="recWhoLabel">Swimmer</label><input id="recWho" type="text"></div></div>
+    <div class="frow" id="recTeamRow" style="display:none"><div><label>Team</label><input id="recTeam" type="text"></div></div>
     <div class="frow"><div><label>Meet</label><input id="recMeet" type="text"></div></div>
     <label class="check-item" style="margin:.25rem 0 1rem"><input type="checkbox" id="recIsNew"> This is a new record — keep the current one as history</label>
     <div style="display:flex;gap:.5rem;justify-content:flex-end">
@@ -719,6 +736,7 @@ function switchTab(id, el) {
   if (id==='reports') renderReportEvents();
   if (id==='toptimes') renderTopTimes();
   if (id==='records') renderRecords();
+  if (id==='standards') renderStandards();
 }
 
 // ── ROSTER RENDERING ──────────────────────────────────────────────────────
@@ -990,6 +1008,7 @@ function ensureState() {
   R.aliases = R.aliases || {};
   let seeded = false;
   if (!R.records) { R.records = seedRecords(); R.recordRejected = []; seeded = true; }
+  if (!R.ncaaRecords) { R.ncaaRecords = seedNcaaRecords(); R.ncaaRecordRejected = []; seeded = true; }
   const end = seasonEndYear(), off = { SR: 0, JR: 1, SO: 2, FR: 3 };
   let changed = seeded;
   Object.values(R.swimmers).forEach(s => {
@@ -1922,7 +1941,6 @@ function renderReportEvents() {
   const ref = R.reportRef || {};
   document.getElementById('aFinalCuts').value = ref.aFinal || '';
   document.getElementById('bFinalCuts').value = ref.bFinal || '';
-  document.getElementById('ncaaRecs').value = ref.ncaaRec || '';
   document.getElementById('finalsYear').value = ref.finalsYear || '';
   checkReportRef();
 }
@@ -2078,7 +2096,6 @@ function saveReportRef() {
   R.reportRef = {
     aFinal: document.getElementById('aFinalCuts').value,
     bFinal: document.getElementById('bFinalCuts').value,
-    ncaaRec: document.getElementById('ncaaRecs').value,
     finalsYear: document.getElementById('finalsYear').value.trim(),
   };
   checkReportRef();
@@ -2087,7 +2104,7 @@ function saveReportRef() {
 }
 function checkReportRef() {
   const out = [];
-  [['aFinalCuts','A Final'],['bFinalCuts','B Final'],['ncaaRecs','NCAA Rec']].forEach(([id, label]) => {
+  [['aFinalCuts','A Final'],['bFinalCuts','B Final']].forEach(([id, label]) => {
     const p = parseCuts(document.getElementById(id).value);
     const n = Object.keys(p.map).length;
     if (n || p.bad.length) out.push(`${label}: ${n} event${n===1?'':'s'}${p.bad.length ? ` · <span style="color:var(--red)">couldn't read: ${p.bad.map(esc).join(' | ')}</span>` : ''}`);
@@ -2141,7 +2158,6 @@ function generateReport() {
   const selectedCols = [...document.querySelectorAll('#colPicker input:checked')].map(i=>i.id.replace('col_',''));
   const aFinal = parseCuts(document.getElementById('aFinalCuts').value);
   const bFinal = parseCuts(document.getElementById('bFinalCuts').value);
-  const ncaaRec = parseCuts(document.getElementById('ncaaRecs').value);
   const yr = document.getElementById('finalsYear').value.trim();
 
   let swimmers = Object.values(R.swimmers).filter(s => isActive(s));
@@ -2172,7 +2188,7 @@ function generateReport() {
         first: i === 0, last: i === inEvent.length - 1, event: ev, g,
         name: s.first + ' ' + s.last,
         ltbt: t.ltbt, sbt: t.sbt + (t.sbSwim && t.sbSwim.lo ? ' (LO)' : ''),
-        afinal: refFor(aFinal, g, ev), bfinal: refFor(bFinal, g, ev), ncaarec: refFor(ncaaRec, g, ev),
+        afinal: refFor(aFinal, g, ev), bfinal: refFor(bFinal, g, ev), ncaarec: ((R.ncaaRecords || []).find(r => r.g === g && r.ev === ev) || {}).time || '',
         vr: rec ? rec.time : '',
         cutA: std[0] || '', cutB: std[1] || '', cutQ: std[2] || '',
         std: t.sbSwim ? ncaaMark(t.sbSwim) : '',
@@ -2334,6 +2350,67 @@ const REC_EV_LABEL = ev => ev.replace(/ FS$/, ' Free').replace(/ BK$/, ' Back').
 const recLabel = r => r.type === 'swim' ? REC_EV_LABEL(r.ev).replace(/^([\d,]+) /, '$1-Yard ').replace(/ IM$/, ' Individual Medley').replace(/ Free$/, ' Freestyle').replace(/ Back$/, ' Backstroke').replace(/ Breast$/, ' Breaststroke').replace(/ Fly$/, ' Butterfly')
   : r.type === 'relay' ? r.ev.replace(/^(\d+) Free Relay$/, '$1-Yard Freestyle Relay').replace(/^(\d+) Medley Relay$/, '$1-Yard Medley Relay') : r.ev;
 
+// NCAA Division III records (SwimCloud, Oct 21 2026). Kept apart from Emory's records; same approve/edit flow.
+const NCAA_REC_ASOF = 'Oct 21, 2026';
+const NCAA_REC_SEED = {
+  W: [
+    ["swim", "50 FS", "22.15", "Kaley McIntyre", "NYU", "2025-03-19", "NCAA Division III Championship"],
+    ["swim", "100 FS", "48.13", "Kaley McIntyre", "NYU", "2025-11-23", "16th Annual Phoenix Fall Classic"],
+    ["swim", "200 FS", "1:44.74", "Kaley McIntyre", "NYU", "2026-02-13", "University Athletic Association Championships"],
+    ["swim", "500 FS", "4:43.37", "Kendra Stern", "Amherst", "2011-03-23", "NCAA Division III Championships"],
+    ["swim", "1000 FS", "9:49.81", "Natalie Garre", "Bowdoin", "2025-03-22", "NCAA Division III Championship"],
+    ["swim", "1650 FS", "16:17.84", "Natalie Garre", "Bowdoin", "2025-03-22", "NCAA Division III Championship"],
+    ["swim", "50 BK", "23.14", "Lucy Townend", "Middlebury", "2022-02-12", "NESCAC Womens Championships"],
+    ["swim", "100 BK", "53.29", "Kate Augustyn", "MIT", "2025-02-21", "NEWMAC Championships"],
+    ["swim", "200 BK", "1:55.67", "Crile Hart", "Kenyon", "2018-03-24", "NCAA Division III Championships"],
+    ["swim", "50 BR", "27.56", "Jennah Fadely", "Kenyon", "2025-01-10", "Princeton vs. Kenyon vs. Navy"],
+    ["swim", "100 BR", "59.62", "Jennah Fadely", "Kenyon", "2025-01-10", "Princeton vs. Kenyon vs. Navy"],
+    ["swim", "200 BR", "2:10.06", "Jordyn Wentzel", "St. Kate's (MN)", "2022-03-19", "NCAA Division III Championship"],
+    ["swim", "50 FL", "23.99", "Emma Waddell", "Williams", "2016-02-12", "NESCAC Women's Championships"],
+    ["swim", "100 FL", "52.64", "Kirsten Nitz", "Wheaton (IL)", "2014-03-20", "NCAA Division III Championships"],
+    ["swim", "200 FL", "1:55.66", "Logan Todhunter", "Williams", "2012-03-23", "NCAA Division III Championships"],
+    ["swim", "100 IM", "55.39", "KT Kustritz", "Denison", "2020-02-15", "North Coast Athletic Conference Championships"],
+    ["swim", "200 IM", "1:57.76", "Crile Hart", "Kenyon", "2022-03-16", "NCAA Division III Championship"],
+    ["swim", "400 IM", "4:11.23", "Sophia Verkleeren", "Williams", "2025-03-20", "NCAA Division III Championship"],
+    ["relay", "200 Free Relay", "1:29.38", "Jeong Engle, O'Donnell, Ladomirak, McIntyre", "NYU", "2026-03-19", "NCAA Division III Championship"],
+    ["relay", "400 Free Relay", "3:18.46", "Muir, Cheng, Ong, Taylor", "Emory", "2018-03-24", "NCAA Division III Championships"],
+    ["relay", "800 Free Relay", "7:13.02", "Ranile, Motekaitis, Oldham, McIntyre", "NYU", "2025-03-21", "NCAA Division III Championship"],
+    ["relay", "200 Medley Relay", "1:39.51", "Augustyn, Bernard, Naveen, Roberson", "MIT", "2025-03-21", "NCAA Division III Championship"],
+    ["relay", "400 Medley Relay", "3:37.94", "Eisenbeis, Van Eldik, Kortuem, Torrecillas-Jouault", "Kenyon", "2026-03-18", "NCAA Division III Championship"]
+  ],
+  M: [
+    ["swim", "50 FS", "19.37", "Oliver Smith", "Emory", "2018-03-21", "NCAA Division III Championships"],
+    ["swim", "100 FS", "42.67", "Jack Hill", "Denison", "2026-03-21", "NCAA Division III Championship"],
+    ["swim", "200 FS", "1:26.58", "Igor Potempa", "Colorado College", "2026-10-16", "Colorado College vs. Asbury"],
+    ["swim", "500 FS", "4:18.35", "Arthur Conover", "Kenyon", "2017-03-15", "NCAA Division III Championships"],
+    ["swim", "1000 FS", "9:05.05", "George Goins", "Denison", "2026-03-21", "NCAA Division III Championship"],
+    ["swim", "1650 FS", "14:56.44", "Arthur Conover", "Kenyon", "2016-12-01", "Total Performance Invitational"],
+    ["swim", "50 BK", "21.03", "Liam McDonnell", "John Carroll", "2023-03-15", "NCAA Division III Championship"],
+    ["swim", "100 BK", "45.75", "Tanner Filion", "Whitman", "2023-03-17", "NCAA Division III Championship"],
+    ["swim", "200 BK", "1:41.17", "Tanner Filion", "Whitman", "2023-03-18", "NCAA Division III Championship"],
+    ["swim", "50 BR", "23.87", "Marrich Somridhivej", "Bates", "2026-02-20", "NESCAC Mens Championships"],
+    ["swim", "100 BR", "50.94", "Andrew Wilson", "Emory", "2017-03-17", "NCAA Division III Championships"],
+    ["swim", "200 BR", "1:50.80", "Andrew Wilson", "Emory", "2017-03-18", "NCAA Division III Championships"],
+    ["swim", "50 FL", "20.99", "Neil Mortimer", "Colby", "2023-02-17", "NESCAC Mens Championships"],
+    ["swim", "100 FL", "45.85", "Cooper Costello", "Chicago", "2026-03-19", "NCAA Division III Championship"],
+    ["swim", "200 FL", "1:42.64", "Justin Finkel", "Connecticut College", "2025-03-21", "NCAA Division III Championship"],
+    ["swim", "100 IM", "48.11", "Garrett Clasen", "Chicago", "2024-02-24", "Midwest Invitational"],
+    ["swim", "200 IM", "1:42.97", "Derek Maas", "NYU", "2024-03-20", "NCAA Division III Championship"],
+    ["swim", "400 IM", "3:46.62", "Harrison Curley", "Kenyon", "2015-03-19", "NCAA Division III Championships"],
+    ["relay", "200 Free Relay", "1:18.06", "Somers, Turk, Richardson, Ramsey", "Kenyon", "2012-03-22", "NCAA Division III Championships"],
+    ["relay", "400 Free Relay", "2:53.33", "Costello, Schwartz, Lobo, Butler", "Chicago", "2026-03-21", "NCAA Division III Championship"],
+    ["relay", "800 Free Relay", "6:22.37", "Hill, Goins, Parsons, Hensel", "Denison", "2026-03-20", "NCAA Division III Championship"],
+    ["relay", "200 Medley Relay", "1:25.57", "Johnson, Somridhivej, Oppenheim, Cory", "Bates", "2026-02-21", "NESCAC Mens Championships"],
+    ["relay", "400 Medley Relay", "3:08.43", "Johnson, Somridhivej, Oppenheim, Cory", "Bates", "2026-03-18", "NCAA Division III Championship"]
+  ]
+};
+function seedNcaaRecords() {
+  const out = [];
+  ['W', 'M'].forEach(g => NCAA_REC_SEED[g].forEach(([type, ev, time, who, team, date, meet]) =>
+    out.push({ id: 'N|' + g + '|' + ev, scope: 'ncaa', g, type, ev, time, who, team, date, meet, swimId: null, hist: [] })));
+  return out;
+}
+
 function seedRecords() {
   const out = [];
   ['W', 'M'].forEach(g => RECORD_SEED[g].forEach(([type, ev, time, who, date, meet]) =>
@@ -2344,8 +2421,10 @@ function seedRecords() {
 // Imported swims that beat a current individual record and haven't been approved or rejected.
 // Per record: the chain of swims that broke it in date order (each one beating the one before).
 function recordCandidates() {
-  const rej = new Set(R.recordRejected || []), out = [];
-  (R.records || []).filter(r => r.type === 'swim').forEach(r => {
+  const out = [];
+  [[R.records, R.recordRejected, 'team'], [R.ncaaRecords, R.ncaaRecordRejected, 'ncaa']].forEach(([list, rejList, scope]) => {
+  const rej = new Set(rejList || []);
+  (list || []).filter(r => r.type === 'swim').forEach(r => {
     let bar = timeToSec(r.time);
     const chain = [];
     (R.swims || []).filter(s => s.kind === 'ind' && s.event === r.ev && !rej.has(s.id) && s.id !== r.swimId &&
@@ -2353,7 +2432,8 @@ function recordCandidates() {
       .map(s => ({ s, t: timeToSec(s.time) }))
       .sort((a, b) => a.s.date.localeCompare(b.s.date) || b.t - a.t)
       .forEach(({ s, t }) => { if (t < bar) { chain.push(s); bar = t; } });
-    if (chain.length) out.push({ rec: r, chain });
+    if (chain.length) out.push({ rec: r, chain, scope });
+  });
   });
   return out;
 }
@@ -2371,18 +2451,19 @@ const swimmerName = sid => { const s = R.swimmers[sid]; return s ? `${s.first} $
 function approveRecord(i) {
   const c = (window._recCands || [])[i];
   if (!c) return;
-  const r = R.records.find(x => x.id === c.rec.id);
+  const r = (c.scope === 'ncaa' ? R.ncaaRecords : R.records).find(x => x.id === c.rec.id);
   c.chain.forEach(s => {
     r.hist = r.hist || [];
-    r.hist.unshift({ time: r.time, who: r.who, date: r.date, meet: r.meet, swimId: r.swimId });
-    Object.assign(r, { time: s.time, who: swimmerName(s.sid), date: s.date, meet: s.meet, swimId: s.id });
+    r.hist.unshift({ time: r.time, who: r.who, team: r.team, date: r.date, meet: r.meet, swimId: r.swimId });
+    Object.assign(r, { time: s.time, who: swimmerName(s.sid), date: s.date, meet: s.meet, swimId: s.id }, c.scope === 'ncaa' ? { team: 'Emory' } : {});
   });
   save(); showRecordApprovals(); renderRecordsIfOpen();
 }
 function rejectRecord(i) {
   const c = (window._recCands || [])[i];
   if (!c) return;
-  R.recordRejected = (R.recordRejected || []).concat(c.chain.map(s => s.id));
+  const k = c.scope === 'ncaa' ? 'ncaaRecordRejected' : 'recordRejected';
+  R[k] = (R[k] || []).concat(c.chain.map(s => s.id));
   save(); showRecordApprovals(); renderRecordsIfOpen();
 }
 
@@ -2395,10 +2476,10 @@ function showRecordApprovals() {
     const r = c.rec, last = c.chain[c.chain.length - 1];
     const earlier = c.chain.slice(0, -1).map(s => `${esc(s.time)} ${esc(swimmerName(s.sid))} (${recFmtDate(s.date)})`).join(', ');
     return `<div class="card" style="margin-bottom:.75rem">
-      <div class="ct">${r.g === 'W' ? 'Women' : 'Men'} · ${esc(recLabel(r))}</div>
+      <div class="ct">${c.scope === 'ncaa' ? '<span style="color:var(--gold)">NCAA DIII record</span> · ' : ''}${r.g === 'W' ? 'Women' : 'Men'} · ${esc(recLabel(r))}</div>
       <div style="font-size:.95rem;font-weight:700">${esc(swimmerName(last.sid))} <span class="ttime pr" style="font-size:.95rem">${esc(last.time)}</span>${last.lo ? ' <span class="badge lo">LO</span>' : ''}</div>
       <div style="font-size:.75rem;color:var(--text-dim);margin:.2rem 0 .6rem">${esc(last.meet)} · ${recFmtDate(last.date)}<br>
-        Current record: ${esc(r.time)} ${esc(r.who)} (${recFmtDate(r.date)})${earlier ? `<br>Also broke it earlier: ${earlier}` : ''}</div>
+        Current record: ${esc(r.time)} ${esc(r.who)}${r.team ? ', ' + esc(r.team) : ''} (${recFmtDate(r.date)})${earlier ? `<br>Also broke it earlier: ${earlier}` : ''}</div>
       <div style="display:flex;gap:.5rem"><button class="btn bprimary bsm" onclick="approveRecord(${i})">Approve new record</button>
         <button class="btn bdanger bsm" onclick="rejectRecord(${i})">Reject</button></div></div>`;
   }).join('');
@@ -2432,11 +2513,69 @@ function renderRecords() {
   document.getElementById('recList').innerHTML = section('swim', 'Individual') + section('dive', 'Diving') + section('relay', 'Relays');
 }
 
+// ── Standards tab: NCAA cuts, prior-year finals cuts, NCAA DIII records and Emory records side by side ──
+let _stdG = 'W';
+const STD_EVENTS = ['50 FS','100 FS','200 FS','500 FS','1000 FS','1650 FS','50 BK','100 BK','200 BK','50 BR','100 BR','200 BR','50 FL','100 FL','200 FL','100 IM','200 IM','400 IM'];
+const STD_RELAYS = ['200 Free Relay','400 Free Relay','800 Free Relay','200 Medley Relay','400 Medley Relay'];
+function setStdG(g, el) { _stdG = g; el.parentNode.querySelectorAll('.fpill').forEach(p => p.classList.remove('act')); el.classList.add('act'); renderStandards(); }
+
+function stdData(g) {
+  ensureState();
+  const ref = R.reportRef || {}, aF = parseCuts(ref.aFinal || ''), bF = parseCuts(ref.bFinal || '');
+  const nrec = ev => (R.ncaaRecords || []).find(r => r.g === g && r.ev === ev);
+  const erec = ev => (R.records || []).find(r => r.g === g && r.ev === ev && r.type !== 'dive');
+  return {
+    yr: ref.finalsYear || '',
+    swim: STD_EVENTS.map(ev => { const s = (NCAA_STD[g] || {})[ev] || []; return { ev, A: s[0] || '', B: s[1] || '', Q: s[2] || '',
+      aF: refFor(aF, g, ev), bF: refFor(bF, g, ev), n: nrec(ev), e: erec(ev), ncaaEv: !!s.length }; }),
+    relay: STD_RELAYS.map(ev => ({ ev, n: nrec(ev), e: erec(ev) }))
+  };
+}
+const stdYear = r => r && r.date ? r.date.slice(0, 4) : '';
+
+function renderStandards() {
+  const g = _stdG, d = stdData(g), dash = '<span style="color:var(--text-dim)">—</span>';
+  const recCell = (r, team) => r ? `<td class="ttime" style="white-space:nowrap;font-weight:700">${esc(r.time)}</td>
+      <td style="font-size:.78rem">${esc(r.who)}<div class="tt-meet">${team && r.team ? esc(r.team) + ' · ' : ''}${stdYear(r)}</div></td>` : `<td>${dash}</td><td></td>`;
+  const edit = r => r ? `<button class="btn bsm" onclick="openRecordEdit(${R.ncaaRecords.indexOf(r)},'ncaa')">Edit</button>` : '';
+  const t = v => v ? `<td class="ttime">${esc(v)}</td>` : `<td>${dash}</td>`;
+  const yr = d.yr ? `'${String(d.yr).slice(2)} ` : '';
+  document.getElementById('stdList').innerHTML =
+    `<div class="card" style="overflow-x:auto"><div class="ct">Individual — ${g === 'W' ? 'Women' : 'Men'}</div><table class="tbl"><thead><tr>
+      <th>Event</th><th>NCAA A</th><th>NCAA B</th><th>'26 Invite</th><th>${yr}A Final</th><th>${yr}B Final</th><th colspan="2">NCAA DIII record</th><th colspan="2">Emory record</th><th></th></tr></thead><tbody>${
+      d.swim.map(r => `<tr${r.ncaaEv ? '' : ' style="opacity:.6" title="Not swum at NCAAs"'}><td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(r.ev)}</td>
+        ${t(r.A)}${t(r.B)}${t(r.Q)}${t(r.aF)}${t(r.bF)}${recCell(r.n, true)}${recCell(r.e, false)}<td style="text-align:right">${edit(r.n)}</td></tr>`).join('')
+    }</tbody></table></div>
+    <div class="card" style="overflow-x:auto"><div class="ct">Relays</div><table class="tbl"><thead><tr><th>Event</th><th colspan="2">NCAA DIII record</th><th colspan="2">Emory record</th><th></th></tr></thead><tbody>${
+      d.relay.map(r => `<tr><td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(r.ev)}</td>${recCell(r.n, true)}${recCell(r.e, false)}<td style="text-align:right">${edit(r.n)}</td></tr>`).join('')
+    }</tbody></table></div>`;
+  document.getElementById('stdNote').textContent = `NCAA A/B = 2027 qualifying standards · '26 Invite = 2026 invited time · ` +
+    (d.yr ? `${d.yr} A/B Final = 8th / 16th place in NCAA prelims (from the results file on Reports)` : 'A/B Final cuts: load an NCAA results file on the Reports tab') +
+    ` · DIII records as of ${NCAA_REC_ASOF}, updated when you approve or edit one.`;
+}
+
+function printStandards() {
+  renderStandards();
+  const g = _stdG, d = stdData(g), yr = d.yr ? `'${String(d.yr).slice(2)} ` : '';
+  const rc = (r, team) => r ? `<td class="r"><b>${esc(r.time)}</b></td><td class="n">${esc(r.who)}${team && r.team ? ', ' + esc(r.team) : ''} <span class="pc">${stdYear(r)}</span></td>` : '<td></td><td></td>';
+  document.getElementById('stdPrint').innerHTML =
+    `<div class="ph"><b>NCAA DIII Standards &amp; Records — ${g === 'W' ? 'Women' : 'Men'}</b> &nbsp;printed ${new Date().toLocaleDateString()}</div>
+     <div class="pm">${esc(document.getElementById('stdNote').textContent)}</div>
+     <table class="pt st"><tr><th>Event</th><th class="r">NCAA A</th><th class="r">NCAA B</th><th class="r">'26 Inv</th><th class="r">${yr}A Fin</th><th class="r">${yr}B Fin</th><th colspan="2">NCAA DIII record</th><th colspan="2">Emory record</th></tr>${
+      d.swim.map(r => `<tr><td><b>${esc(r.ev)}</b></td>${[r.A, r.B, r.Q, r.aF, r.bF].map(v => `<td class="r">${esc(v)}</td>`).join('')}${rc(r.n, true)}${rc(r.e, false)}</tr>`).join('')}</table>
+     <table class="pt st"><tr><th>Relay</th><th colspan="2">NCAA DIII record</th><th colspan="2">Emory record</th></tr>${
+      d.relay.map(r => `<tr><td><b>${esc(r.ev)}</b></td>${rc(r.n, true)}${rc(r.e, false)}</tr>`).join('')}</table>`;
+  window.print();
+}
+
 let _recEdit = null;
-function openRecordEdit(i) {
-  const r = R.records[i]; if (!r) return;
-  _recEdit = i;
-  document.getElementById('recEditTitle').textContent = `${r.g === 'W' ? 'Women' : 'Men'} · ${recLabel(r)}`;
+const recList = which => which === 'ncaa' ? R.ncaaRecords : R.records;
+function openRecordEdit(i, which) {
+  const r = recList(which)[i]; if (!r) return;
+  _recEdit = { i, which };
+  document.getElementById('recEditTitle').textContent = `${which === 'ncaa' ? 'NCAA DIII record · ' : ''}${r.g === 'W' ? 'Women' : 'Men'} · ${recLabel(r)}`;
+  document.getElementById('recTeamRow').style.display = which === 'ncaa' ? '' : 'none';
+  document.getElementById('recTeam').value = r.team || '';
   document.getElementById('recTime').value = r.time;
   document.getElementById('recWho').value = r.who;
   document.getElementById('recDate').value = r.date || '';
@@ -2447,17 +2586,18 @@ function openRecordEdit(i) {
   document.getElementById('recEditModal').classList.add('open');
 }
 function saveRecordEdit() {
-  const r = R.records[_recEdit]; if (!r) return;
+  const which = _recEdit && _recEdit.which, r = _recEdit && recList(which)[_recEdit.i]; if (!r) return;
   const v = id => document.getElementById(id).value.trim();
   if (!v('recTime') || !v('recWho')) { alert('Time/score and name are required.'); return; }
   if (document.getElementById('recIsNew').checked) {
     r.hist = r.hist || [];
-    r.hist.unshift({ time: r.time, who: r.who, date: r.date, meet: r.meet, swimId: r.swimId });
+    r.hist.unshift({ time: r.time, who: r.who, team: r.team, date: r.date, meet: r.meet, swimId: r.swimId });
     r.swimId = null;
   }
-  Object.assign(r, { time: v('recTime'), who: v('recWho'), date: v('recDate'), meet: v('recMeet') });
+  Object.assign(r, { time: v('recTime'), who: v('recWho'), date: v('recDate'), meet: v('recMeet') }, which === 'ncaa' ? { team: v('recTeam') } : {});
   document.getElementById('recEditModal').classList.remove('open');
-  save(); renderRecords();
+  save(); renderRecordsIfOpen();
+  if (document.getElementById('tab-standards').classList.contains('act')) renderStandards();
 }
 
 function printRecords() {
