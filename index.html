@@ -169,6 +169,10 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .badge.lo{background:rgba(92,155,224,.12);color:var(--blue);margin-left:.35rem;}
 .badge.pbb{background:var(--gold);color:#0f1117;margin-left:.35rem;}
 .badge.vrb{background:var(--purple);color:#fff;margin-left:.35rem;}
+.badge.d3{margin-left:.35rem;}
+.badge.d3g{background:var(--green);color:#fff;}
+.badge.d3y{background:#e8c547;color:#1a1a1a;}
+.badge.d3r{background:var(--red);color:#fff;}
 .badge.std{margin-left:.35rem;border:1px solid currentColor;}
 .badge.stdA{background:#e05c5c;color:#fff;border-color:#e05c5c;}
 .badge.stdQ{color:var(--green);background:rgba(76,175,125,.12);}
@@ -208,6 +212,10 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   table.pt td.pbt{font-weight:800;}
   .pbm.vrm{background:#000;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .pbm.stdm{border-radius:50%;min-width:8px;text-align:center;}
+  .pbm.d3m{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .pbm.d3g{background:#2e8b57;color:#fff;border-color:#2e8b57;}
+  .pbm.d3y{background:#f0d060;color:#000;}
+  .pbm.d3r{background:#c0392b;color:#fff;border-color:#c0392b;}
   .pbm{display:inline-block;font-size:6.5px;font-weight:800;border:1px solid #000;border-radius:2px;padding:0 1.5px;margin-left:2px;line-height:1.1;vertical-align:1px;}
   .card{break-inside:avoid;border:1px solid #999;border-radius:4px;padding:5px 7px;margin:0 0 8px;}
   .card+.card{margin-top:0;}
@@ -464,9 +472,12 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <h3>Team Top Times</h3>
     <div style="display:flex;gap:.5rem;align-items:center">
       <select id="ttSeason" onchange="renderTopTimes()" style="width:auto"></select>
+      <button class="btn bsm" onclick="document.getElementById('d3File').click()" title="USA Swimming NCAA Top Times Report PDF(s); gender comes from the file name">&#8679; DIII ranks</button>
+      <input type="file" id="d3File" accept=".pdf" multiple style="display:none" onchange="loadD3Ranks(this.files).finally(()=>{this.value=''})">
       <button class="btn bsm" onclick="printTopTimes()">&#128424; Print</button>
     </div>
   </div>
+  <div id="d3Status" style="font-size:.72rem;font-family:var(--fm);color:var(--text-dim);margin:-.25rem 0 .75rem"></div>
   <div class="fbar" id="ttGenderBar">
     <div class="fpill act" data-v="W" onclick="setTT('gender','W',this)">Women</div>
     <div class="fpill" data-v="M" onclick="setTT('gender','M',this)">Men</div>
@@ -1567,7 +1578,8 @@ function printTopTimes() {
   const meets = Object.values(used).sort((a,b) => a.date.localeCompare(b.date))
     .map(s => `<b>${md(s.date)}</b> ${esc(s.meet)}`).join(' &nbsp;·&nbsp; ');
   const nm = sw => `${esc(sw.first)} ${esc(sw.last)}`;
-  const lo = s => (s.pb ? '<span class="pbm">PB</span>' : '') + (m => m ? `<span class="pbm stdm">${m}</span>` : '')(ncaaMark(s)) + (_vr.has(s.id) ? '<span class="pbm vrm">VR</span>' : '') + (s.lo ? '<sup>LO</sup>' : '');
+  const lo = s => (s.pb ? '<span class="pbm">PB</span>' : '') + (m => m ? `<span class="pbm stdm">${m}</span>` : '')(ncaaMark(s)) + (_vr.has(s.id) ? '<span class="pbm vrm">VR</span>' : '') +
+    (r => r ? `<span class="pbm d3m d3${d3Tier(_tt.gender, r)}">DIII #${r} ${d3Tier(_tt.gender, r).toUpperCase()}</span>` : '')((window._d3 || {})[s.id]) + (s.lo ? '<sup>LO</sup>' : '');
   const tc = s => `<td class="r${s.pb ? ' pbt' : ''}">${esc(s.time)}${lo(s)}</td>`;
   let body = '';
   if (_tt.view === 'name') {
@@ -1593,10 +1605,128 @@ function printTopTimes() {
   document.getElementById('ttPrint').innerHTML =
     `<div class="ph"><b>Emory Swimming &amp; Diving — ${_tt.gender==='W'?'Women':'Men'}'s ${_tt.kind==='split'?'Relay Split':'Individual'} Top Times</b>
        &nbsp;${_tt.season} · ${_tt.view==='name'?'by name':'by event'} · ${codeTxt} · printed ${new Date().toLocaleDateString()}</div>
-     <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · <span class="pbm">PB</span> = lifetime best · <span class="pbm vrm">VR</span> = set a team record · <span class="pbm stdm">A</span> <span class="pbm stdm">Q</span> <span class="pbm stdm">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · LO = relay lead-off · * = tie</div>
+     <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · <span class="pbm">PB</span> = lifetime best · <span class="pbm vrm">VR</span> = set a team record · <span class="pbm stdm">A</span> <span class="pbm stdm">Q</span> <span class="pbm stdm">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · LO = relay lead-off · * = tie${Object.keys(window._d3 || {}).length ? ` · DIII #n = USA Swimming DIII rank (${R.d3Ranks[_tt.gender].date}): G ≤ ${D3_TIERS[_tt.gender][0]}, Y ≤ ${D3_TIERS[_tt.gender][1]}, R after` : ''}</div>
      <div class="pcols ${_tt.view==='name'?'':'pcols2'}">${body}</div>`;
   window.print();
 }
+
+// ── DIII RANKS (USA Swimming "NCAA Top Times Report" PDFs) ────────────────
+// Two-column report; each column has its own "# Time Name(s) Team TS Date" header.
+// Only Emory's individual rows are kept. The report never names a gender, so it comes from the file name.
+const D3_TIERS = { M: [6, 12], W: [10, 18] };   // green at or better than the first, yellow the second, red after
+const d3Tier = (g, rank) => { const [a, b] = D3_TIERS[g] || D3_TIERS.M; return rank <= a ? 'g' : rank <= b ? 'y' : 'r'; };
+
+function parseUsasTopTimes(pages) {
+  const STK = { FR: 'FS', BK: 'BK', BR: 'BR', FL: 'FL', IM: 'IM' };
+  const out = { rows: [], reportDate: '' };
+  pages.forEach(items => {
+    items = items.filter(i => i.str && i.str.trim());
+    if (!out.reportDate) { const d = items.find(i => /^\d{1,2}\/\d{1,2}\/\d{4}\b/.test(i.str.trim())); if (d) out.reportDate = d.str.trim().split(' ')[0]; }
+    // Column boundaries: halfway between one column's Date header and the next column's # header
+    const uniq = xs => [...new Set(xs.map(x => Math.round(x)))].sort((a, b) => a - b);
+    const hashes = uniq(items.filter(i => i.str.trim() === '#').map(i => i.x));
+    const dates = uniq(items.filter(i => i.str.trim() === 'Date').map(i => i.x));
+    const cuts = hashes.slice(1).map((x, k) => ((dates[k] != null ? dates[k] : x - 30) + x) / 2);
+    const cols = hashes.map(() => []);
+    items.forEach(i => { const c = cuts.filter(cx => i.x >= cx).length; if (cols[c]) cols[c].push(i); });
+    cols.forEach(ci => {
+      const rows = [];
+      ci.forEach(it => { let r = rows.find(r => Math.abs(r.y - it.y) < 2.5); if (!r) rows.push(r = { y: it.y, items: [] }); r.items.push(it); });
+      rows.sort((a, b) => b.y - a.y);
+      let ev = null;
+      rows.forEach(r => {
+        const t = r.items.sort((a, b) => a.x - b.x).map(i => i.str.trim());
+        const h = t.join(' ').match(/^(\d+)\s+(FR|BK|BR|FL|IM|FR-R|MED-R)\s+SCY$/);
+        if (h) { ev = /-R$/.test(h[2]) ? null : `${+h[1]} ${STK[h[2]]}`; return; }   // relays skipped
+        if (!ev || !/^\d+$/.test(t[0]) || !/^(?:\d+:)?\d+\.\d\d(?:[a-z]|\([a-z]\))*$/.test(t[1] || '')) return;
+        const di = t.length - 1; if (!/^\d+\/\d+\/\d+$/.test(t[di])) return;
+        if (!/^emory/i.test(t[di - 2] || '')) return;
+        out.rows.push({ ev, rank: +t[0], time: t[1].replace(/(?:[a-z]|\([a-z]\))+$/, ''), name: t.slice(2, di - 2).join(' ') });
+      });
+    });
+  });
+  return out;
+}
+
+// Name → roster id (same matcher as imports; a last-name-only match must share the first initial)
+function d3Sid(name, g) {
+  const m = nmMatch(name, g, Object.values(R.swimmers), R.aliases), s = m.id && R.swimmers[m.id];
+  return (m.how === 'alias' || m.how === 'exact' || (s && nmNorm(s.first)[0] === nmNorm(name)[0])) ? m.id : null;
+}
+
+async function loadD3Ranks(fileList) {
+  ensureState();
+  const st = document.getElementById('d3Status');
+  const files = [...(fileList || [])];
+  const loaded = await Promise.all(files.map(f => f.arrayBuffer().then(b => ({ f, bytes: new Uint8Array(b) })).catch(err => ({ f, err }))));
+  const msgs = [];
+  R.d3Ranks = R.d3Ranks || {};
+  for (const { f, bytes, err } of loaded) {
+    try {
+      if (err) throw new Error('could not be read');
+      const res = parseUsasTopTimes(await readPdfPages(bytes));
+      if (!res.rows.length) throw new Error('no Emory swims found — is this a USA Swimming NCAA Top Times Report?');
+      let g = /wom[ae]n|girls|female/i.test(f.name) ? 'W' : /(^|[^a-z])(men|boys|male)([^a-z]|$)/i.test(f.name) ? 'M' : null;
+      if (!g) {   // fall back to whichever roster the names match
+        const n = gg => res.rows.filter(r => d3Sid(r.name, gg)).length;
+        g = n('W') >= n('M') ? 'W' : 'M';
+      }
+      const [mo, da, yr] = (res.reportDate || '').split('/');
+      const iso = yr ? `${yr}-${mo.padStart(2, '0')}-${da.padStart(2, '0')}` : new Date().toISOString().slice(0, 10);
+      R.d3Ranks[g] = { file: f.name, date: iso, season: seasonOf(iso), rows: res.rows };
+      msgs.push(`<div class="st stok">✓ ${esc(f.name)} → ${g === 'W' ? 'Women' : 'Men'} · ${res.rows.length} Emory ranks · report ${res.reportDate || iso}</div>`);
+    } catch (e) {
+      msgs.push(`<div class="st sterr">${esc(f.name)}: ${esc(e.message)}</div>`);
+    }
+  }
+  save();
+  renderTopTimes();
+  st.insertAdjacentHTML('afterbegin', msgs.join(''));
+}
+
+// Ranks for one gender/season: sid|event → rank
+function d3RankMap(g, season) {
+  const d = (R.d3Ranks || {})[g], m = {};
+  if (!d || d.season !== season) return m;
+  d.rows.forEach(r => { const sid = d3Sid(r.name, g); if (sid) m[sid + '|' + r.ev] = r.rank; });
+  return m;
+}
+
+function renderD3Status() {
+  const st = document.getElementById('d3Status'); if (!st) return;
+  const d = (R.d3Ranks || {})[_tt.gender];
+  const gl = _tt.gender === 'W' ? "Women's" : "Men's";
+  if (!d) { st.innerHTML = `No ${gl} DIII ranks uploaded.`; window._d3Miss = []; return; }
+  const miss = [...new Set(d.rows.filter(r => !d3Sid(r.name, _tt.gender)).map(r => r.name))];
+  const roster = Object.values(R.swimmers).filter(s => s.gender === _tt.gender).sort((a, b) => (a.last + a.first).localeCompare(b.last + b.first));
+  const [y, m, dd] = d.date.split('-');
+  st.innerHTML = `${gl} DIII ranks: report ${+m}/${+dd}/${y} (${d.season}) · ${d.rows.length} Emory ranks` +
+    (d.season !== _tt.season ? ` <span style="color:var(--gold)">— not shown: this view is ${_tt.season}</span>` : '') +
+    (miss.length ? `<div style="margin-top:.35rem;color:var(--gold)">${miss.length} name${miss.length > 1 ? 's' : ''} not matched to the roster:</div>` +
+      miss.map((n, i) => `<div class="imp-row"><span>${esc(n)}</span><select onchange="matchD3(${i}, this.value)"><option value="">— skip —</option>${
+        roster.map(s => `<option value="${esc(s.id)}">${esc(s.first)} ${esc(s.last)}</option>`).join('')}</select></div>`).join('') : '');
+  window._d3Miss = miss;
+}
+
+function matchD3(i, sid) {
+  const n = (window._d3Miss || [])[i]; if (!n || !sid) return;
+  R.aliases[_tt.gender + '|' + nmNorm(n)] = sid;   // remembered for imports too
+  save(); renderTopTimes();
+}
+
+// swim id → DIII rank, on each swimmer's fastest row in an event only
+function d3ForView(byEvent, events) {
+  const out = {};
+  if (_tt.kind !== 'ind') return out;
+  const ranks = d3RankMap(_tt.gender, _tt.season);
+  events.forEach(ev => {
+    const fastest = {};
+    Object.values(byEvent[ev]).sort(ttSort(ev)).forEach(s => { if (!fastest[s.sid]) fastest[s.sid] = s; });
+    Object.values(fastest).forEach(s => { const r = ranks[s.sid + '|' + ev]; if (r) out[s.id] = r; });
+  });
+  return out;
+}
+const d3Badge = s => { const r = (window._d3 || {})[s.id]; return r ? `<span class="badge d3 d3${d3Tier(_tt.gender, r)}">DIII #${r}</span>` : ''; };
 
 const ttCodeSel = s => `<span class="code-print">${s.code}</span><select class="code-sel no-print code-${s.code}" onchange="setSwimCode('${s.id}',this.value,this)">${
   REST_CODES.map(c=>`<option ${c===s.code?'selected':''}>${c}</option>`).join('')}</select>`;
@@ -1625,7 +1755,7 @@ function renderTopTimesByName(byEvent, events) {
       h += `<tr>
         <td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(s.event)}</td>
         <td><div class="tt-meet">${esc(s.meet)} · ${s.date}</div></td>
-        <td class="ttime${s.pb?' pr':''}" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.pb?'<span class="badge pbb">PB</span>':''}${(m => m ? `<span class="badge std std${m}">${m}</span>` : '')(ncaaMark(s))}${_vr.has(s.id)?'<span class="badge vrb">VR</span>':''}${s.lo?'<span class="badge lo">LO</span>':''}</td>
+        <td class="ttime${s.pb?' pr':''}" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.pb?'<span class="badge pbb">PB</span>':''}${(m => m ? `<span class="badge std std${m}">${m}</span>` : '')(ncaaMark(s))}${_vr.has(s.id)?'<span class="badge vrb">VR</span>':''}${d3Badge(s)}${s.lo?'<span class="badge lo">LO</span>':''}</td>
         <td class="tt-rank" style="text-align:right" title="Team rank in this event">#${rankOf[s.id]}</td>
         <td style="width:4.5rem;text-align:right">${ttCodeSel(s)}</td>
       </tr>`;
@@ -1645,6 +1775,7 @@ function renderTopTimes() {
   if (!_tt.season || !seasons.includes(_tt.season)) _tt.season = seasons[0];
   sel.innerHTML = seasons.map(s => `<option ${s===_tt.season?'selected':''}>${s}</option>`).join('');
   _tt.season = sel.value;
+  renderD3Status();
 
   const pool = R.swims.filter(s => s.kind === _tt.kind && seasonOf(s.date) === _tt.season &&
     _tt.codes.has(s.code) &&
@@ -1663,6 +1794,7 @@ function renderTopTimes() {
     return (ia<0?99:ia) - (ib<0?99:ib) || a.localeCompare(b);
   });
   window._ttLast = { byEvent, events };
+  window._d3 = d3ForView(byEvent, events);   // DIII rank on each swimmer's fastest row
   if (!events.length) { list.innerHTML = '<div style="color:var(--text-dim);font-size:.82rem">No times for this selection.</div>'; return; }
   if (_tt.view === 'name') { list.innerHTML = renderTopTimesByName(byEvent, events); return; }
 
@@ -1678,7 +1810,7 @@ function renderTopTimes() {
         <td class="tt-rank">${rank}${tied?'*':''}</td>
         <td><div style="font-weight:600;font-size:.8rem">${esc(sw.first)} ${esc(sw.last)} ${classBadge(sw)}</div>
             <div class="tt-meet">${esc(s.meet)} · ${s.date}</div></td>
-        <td class="ttime${s.pb?' pr':''}" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.pb?'<span class="badge pbb">PB</span>':''}${(m => m ? `<span class="badge std std${m}">${m}</span>` : '')(ncaaMark(s))}${_vr.has(s.id)?'<span class="badge vrb">VR</span>':''}${s.lo?'<span class="badge lo">LO</span>':''}</td>
+        <td class="ttime${s.pb?' pr':''}" style="text-align:right;white-space:nowrap">${esc(s.time)}${s.pb?'<span class="badge pbb">PB</span>':''}${(m => m ? `<span class="badge std std${m}">${m}</span>` : '')(ncaaMark(s))}${_vr.has(s.id)?'<span class="badge vrb">VR</span>':''}${d3Badge(s)}${s.lo?'<span class="badge lo">LO</span>':''}</td>
         <td style="width:4.5rem;text-align:right">${ttCodeSel(s)}</td>
       </tr>`;
     });
