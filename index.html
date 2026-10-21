@@ -313,7 +313,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div>
       <div class="card">
         <div class="ct">Import Times</div>
-        <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:1rem">Drop <b>Meet Manager results</b> (the .zip or .hy3 the host sends) and/or Team Manager <b>Individual Top Times</b> (by event or by name) and <b>Relay Legs Only</b> PDFs. Several at once is fine. Re-importing a report that overlaps an earlier one won't create duplicates.</p>
+        <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:1rem">Drop <b>Meet Manager results</b> (the .zip or .hy3 the host sends, or a results <b>PDF</b> during the meet — the .zip replaces those swims later) and/or Team Manager <b>Individual Top Times</b> (by event or by name) and <b>Relay Legs Only</b> PDFs. Several at once is fine. Re-importing a report that overlaps an earlier one won't create duplicates.</p>
         <div class="dropzone" id="dropzone" onclick="document.getElementById('resultsFile').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleFileDrop(event)">
           <div class="ico">&#128196;</div>
           <div style="font-size:.85rem;font-weight:600;margin-bottom:.35rem">Drop results or top-times files here</div>
@@ -1315,10 +1315,85 @@ function nmMatch(name, gender, swimmers, aliases){
   return {id:null,how:'none',candidates:c.map(s=>s.id)};
 }
 
+// ── MEET MANAGER RESULTS PDF (live results during a meet) ─────────────────
+// One or two columns per page. Header: "<Meet name> - 9/26/2026" (or "- 10/16/2026 to 10/18/2026").
+// Individual rows: "<place> Last, First M  YR TEAM  [x]time  [points]"; relays list no swimmer names, so they're skipped.
+// Every swim gets the meet's first date. src:'mmpdf' so the official .zip/.hy3 replaces them later.
+const MM_STROKE = { freestyle: 'FS', backstroke: 'BK', breaststroke: 'BR', butterfly: 'FL', im: 'IM', 'individual medley': 'IM' };
+function mmEvent(rest) {
+  rest = rest.replace(/\s*-?\s*Time Trial\s*$/i, '').trim();
+  if (/Relay/i.test(rest)) return { relay: true };
+  const sw = rest.match(/^(\d+)\s+Yard\s+(.+)$/i);
+  if (sw && MM_STROKE[sw[2].trim().toLowerCase()]) return { ev: `${+sw[1]} ${MM_STROKE[sw[2].trim().toLowerCase()]}` };
+  if (/Platform/i.test(rest) && /Diving/i.test(rest)) return { ev: 'Platform' };
+  const dv = rest.match(/^(\d)\s*(?:mtr|meter|m)\b.*Diving/i);
+  if (dv) return { ev: dv[1] === '1' ? '1m Springboard' : '3m Springboard' };
+  return {};
+}
+const MM_RESULT = /^x?((?:\d+:)?\d+\.\d\d)[A-Za-z*]?$/;   // x = exhibition; trailing J/q/Q/* flags
+function parseMmResultsPdf(pages, teamRe) {
+  teamRe = teamRe || /^EMOR/i;
+  const out = { meet: '', date: '', rows: [], warnings: [], relaysSkipped: 0, isMm: false };
+  let ev = null, g = null, skipEv = false;
+  pages.forEach(items => {
+    items = items.filter(i => i.str && i.str.trim()).map(i => ({ ...i, str: i.str.trim() }));
+    if (items.some(i => /MEET MANAGER/i.test(i.str))) out.isMm = true;
+    if (items.some(i => /Psych Sheet/i.test(i.str))) out.isPsych = true;
+    // Meet name + date from the title line
+    if (!out.meet) {
+      const t = items.find(i => /\s-\s\d{1,2}\/\d{1,2}\/\d{4}/.test(i.str) && !/MEET MANAGER/i.test(i.str));
+      if (t) {
+        const m = t.str.match(/^(.*?)\s+-\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        out.meet = m[1].trim(); out.date = `${m[4]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+      }
+    }
+    // Body starts below the first "Event"/"(Event" heading; column split from where event headings sit
+    const heads = items.filter(i => /^\(?Event\s+\d+/.test(i.str));
+    if (!heads.length) return;
+    // Body = everything below the page header (venue/MEET MANAGER line, meet title, "Results - <day>")
+    const hdr = items.filter(i => /MEET MANAGER|Site License|\s-\s\d{1,2}\/\d{1,2}\/\d{4}|^Results\b/i.test(i.str));
+    const topY = hdr.length ? Math.min(...hdr.map(i => i.y)) - 2 : Math.max(...heads.map(i => i.y)) + 2;
+    const xs = [...new Set(heads.map(i => Math.round(i.x)))].sort((a, b) => a - b);
+    const minX = xs[0], maxX = xs[xs.length - 1];
+    const cut = maxX - minX > 150 ? maxX - 6 : Infinity;   // right column starts at its event headings
+    const cols = [[], []];
+    items.filter(i => i.y <= topY).forEach(i => cols[i.x >= cut ? 1 : 0].push(i));
+    cols.forEach(ci => {
+      const rows = [];
+      ci.forEach(it => { let r = rows.find(r => Math.abs(r.y - it.y) < 2.5); if (!r) rows.push(r = { y: it.y, items: [] }); r.items.push(it); });
+      rows.sort((a, b) => b.y - a.y);
+      rows.forEach(r => {
+        const t = r.items.sort((a, b) => a.x - b.x).map(i => i.str);
+        const line = t.join(' ');
+        const h = line.match(/^\(?Event\s+\d+\s+(Women|Men|Girls|Boys|Mixed)\s+(.+?)\)?$/i);
+        if (h) {
+          g = /^(Women|Girls)/i.test(h[1]) ? 'W' : /^(Men|Boys)/i.test(h[1]) ? 'M' : null;
+          const e = mmEvent(h[2]);
+          skipEv = !!e.relay; ev = e.ev || null;
+          if (!e.ev && !e.relay) out.warnings.push('Skipped event: ' + line.replace(/^\(|\)$/g, ''));
+          return;
+        }
+        if (skipEv) { if (/^\*?\d+$/.test(t[0]) && t.some(x => teamRe.test(x))) out.relaysSkipped++; return; }
+        if (!ev || !g || !/^\*?\d+$/.test(t[0]) || !/,/.test(t[1] || '')) return;   // place (* = tie) + "Last, First"
+        const ti = t.findIndex(x => teamRe.test(x)); if (ti < 0) return;
+        const res = t.slice(ti + 1).filter(x => MM_RESULT.test(x));
+        if (!res.length) return;                                   // DQ / NS / scratch
+        const time = res[res.length - 1].match(MM_RESULT)[1];      // last time on the row is the result (seed/prelim come first)
+        const [last, firstRaw] = t[1].split(',').map(s => s.trim());
+        const first = (firstRaw || '').split(/\s+/).filter((w, i, a) => !(i === a.length - 1 && i > 0 && /^[A-Z]\.?$/.test(w))).join(' ');
+        const yr = (t.slice(2, ti).find(x => /^(FR|SO|JR|SR|GS|GR|5Y|6Y)$/.test(x)) || '');
+        out.rows.push({ kind: 'ind', gender: g, event: ev, time, name: `${first} ${last}`, year: yr, date: out.date, meet: out.meet, leadoff: false, src: 'mmpdf' });
+      });
+    });
+  });
+  if (out.relaysSkipped) out.warnings.push(`${out.relaysSkipped} Emory relay${out.relaysSkipped > 1 ? 's' : ''} skipped — the PDF doesn't name relay swimmers, so splits come with the official .zip`);
+  return out;
+}
+
 async function handleResultsFiles(fileList) {
   ensureState();
   const files = [...(fileList || [])].filter(f => /\.(pdf|hy3|zip)$/i.test(f.name));
-  if (!files.length) { showParseStatus('Choose Meet Manager results (.zip / .hy3) or Team Manager top-times PDFs.', 'err'); return; }
+  if (!files.length) { showParseStatus('Choose Meet Manager results (.zip / .hy3 / results PDF) or Team Manager top-times PDFs.', 'err'); return; }
   // Grab every file's bytes right away, all at once: Chrome can revoke access to a picked file
   // if it's read later (common with iCloud/OneDrive/network folders).
   const loaded = await Promise.all(files.map(f => f.arrayBuffer()
@@ -1351,11 +1426,20 @@ async function handleResultsFiles(fileList) {
           if (!res.rows.length) { fileInfo.push({ name: f.name, err: 'No Emory swims found in these results' }); continue; }
           const ni = res.rows.filter(r => r.kind === 'ind').length;
           fileInfo.push({ name: f.name, label: `Meet results: ${res.meet} (${res.date}) · ${ni} individual + ${res.rows.length - ni} splits`, warnings: res.warnings });
-          res.rows.forEach(r => rows.push(r));
+          res.rows.forEach(r => rows.push({ ...r, src: 'hy3' }));
         }
         continue;
       }
-      const res = tmParseLines(tmItemsToLines(await readPdfPages(bytes)));
+      const pages = await readPdfPages(bytes);
+      const mm = parseMmResultsPdf(pages);
+      if (mm.isPsych) { fileInfo.push({ name: f.name, err: 'This is a psych sheet (entries, not results) — upload it on Reports → Upload meet entries' }); continue; }
+      if (mm.isMm && mm.meet) {   // Meet Manager results PDF (live, during a meet)
+        if (!mm.rows.length) { fileInfo.push({ name: f.name, err: 'No Emory swims found in these results', warnings: mm.warnings }); continue; }
+        fileInfo.push({ name: f.name, label: `Live results PDF: ${mm.meet} (${mm.date}) · ${mm.rows.length} individual swims — replaced when you import the official .zip`, warnings: mm.warnings });
+        mm.rows.forEach(r => rows.push(r));
+        continue;
+      }
+      const res = tmParseLines(tmItemsToLines(pages));
       if (!res.kind) { fileInfo.push({ name: f.name, err: 'Not a Team Manager Individual Top Times report' }); continue; }
       fileInfo.push({ name: f.name, kind: res.kind, count: res.rows.length, warnings: res.warnings });
       res.rows.forEach(r => rows.push({ ...r, kind: res.kind }));
@@ -1383,7 +1467,8 @@ async function handleResultsFiles(fileList) {
   const meets = {};
   rows.forEach(r => {
     const k = r.date + '|' + r.meet;
-    meets[k] = meets[k] || { key: k, name: r.meet, date: r.date, n: 0, code: R.meetCodes[k] || 'U' };
+    // code: this meet's saved code, else one already used for a meet of the same name (e.g. its live-PDF upload), else U
+    meets[k] = meets[k] || { key: k, name: r.meet, date: r.date, n: 0, code: R.meetCodes[k] || ((R.meets || []).find(m => m.name === r.meet && m.code) || {}).code || 'U' };
     meets[k].n++;
   });
 
@@ -1461,7 +1546,17 @@ function applyImport() {
   });
 
   const have = new Set(R.swims.map(s => [s.sid, s.kind, s.event, s.date, s.time].join('|')));
-  let added = 0, dupes = 0, skipped = 0, newBests = 0, pbs = 0;
+  let added = 0, dupes = 0, skipped = 0, newBests = 0, pbs = 0, replaced = 0, removed = 0;
+  // Official results (.zip/.hy3) replace swims added from a live results PDF of the same meet
+  // (same meet name, or dated within the official file's days). A matching swim is updated in place so its
+  // PB flag and any approved record keep pointing at it; PDF swims with no official match are removed.
+  const official = _imp.rows.filter(r => r.src === 'hy3');
+  let pdfPool = [];
+  if (official.length) {
+    const names = new Set(official.map(r => r.meet)), ds = official.map(r => r.date).sort();
+    pdfPool = R.swims.filter(s => s.src === 'mmpdf' && (names.has(s.meet) || (s.date >= ds[0] && s.date <= ds[ds.length - 1])));
+  }
+  const pdfMkeys = new Set(pdfPool.map(s => s.mkey));
   const fc = _imp.finalsCuts;
   if (fc) R.reportRef = { ...(R.reportRef || {}), aFinal: fc.a, bFinal: fc.b, finalsYear: fc.year || (R.reportRef || {}).finalsYear || '' };
   const rv = r => isDive(r.event) ? -parseFloat(r.time) : timeToSec(r.time);
@@ -1470,11 +1565,21 @@ function applyImport() {
     const sid = idFor[r.gender + '|' + r.name];
     if (!sid || !R.swimmers[sid]) { skipped++; return; }
     const key = [sid, r.kind, r.event, r.date, r.time].join('|');
+    const mkey = r.date + '|' + r.meet;
+    if (r.src === 'hy3' && pdfPool.length) {
+      const i = pdfPool.findIndex(s => s.sid === sid && s.kind === r.kind && s.event === r.event && s.time === r.time);
+      if (i >= 0) {
+        const s = pdfPool.splice(i, 1)[0], oldMeet = s.meet, oldDate = s.date;
+        Object.assign(s, { date: r.date, meet: r.meet, mkey, code: _imp.meets[mkey].code, src: 'hy3', lo: !!r.leadoff });
+        const t = ((R.swimmers[sid].times || {})[r.event] || {});
+        (t.history || []).forEach(hh => { if (hh.meet === oldMeet && hh.date === oldDate && hh.time === r.time) { hh.meet = r.meet; hh.date = r.date; } });
+        have.add(key); replaced++; return;
+      }
+    }
     if (have.has(key)) { dupes++; return; }
     have.add(key);
-    const mkey = r.date + '|' + r.meet;
     const swim = { id: 'w' + Date.now().toString(36) + added, sid, kind: r.kind, event: r.event, time: r.time,
-      date: r.date, meet: r.meet, mkey, code: _imp.meets[mkey].code, lo: !!r.leadoff, pb: false };
+      date: r.date, meet: r.meet, mkey, code: _imp.meets[mkey].code, lo: !!r.leadoff, pb: false, src: r.src || 'tm' };
     R.swims.push(swim);
     added++;
     // Individual swims also feed the swimmer's SBT / LBT / history (relay splits don't)
@@ -1493,6 +1598,18 @@ function applyImport() {
     }
   });
 
+  // Live-PDF swims the official results didn't confirm
+  if (pdfPool.length) {
+    const gone = new Set(pdfPool.map(s => s.id));
+    pdfPool.forEach(s => {
+      const t = ((R.swimmers[s.sid] || {}).times || {})[s.event];
+      if (t && t.history) t.history = t.history.filter(hh => !(hh.meet === s.meet && hh.date === s.date && hh.time === s.time));
+    });
+    R.swims = R.swims.filter(s => !gone.has(s.id));
+    removed = gone.size;
+  }
+  if (pdfMkeys.size) R.meets = R.meets.filter(m => !pdfMkeys.has(m.key) || R.swims.some(s => s.mkey === m.key));
+
   // Meet list + codes
   Object.values(_imp.meets).forEach(m => {
     R.meetCodes[m.key] = m.code;
@@ -1509,7 +1626,8 @@ function applyImport() {
   renderAll();
   showParseStatus(`✓ ${added} new swims imported · ${pbs} lifetime best${pbs===1?'':'s'} · ${newBests} new season bests` +
     (fc ? ` · cheer sheet A/B final cuts updated (${fc.year})` : '') +
-    (dupes ? ` · ${dupes} already in EagleRoster` : '') + (skipped ? ` · ${skipped} skipped` : ''), 'ok');
+    (dupes ? ` · ${dupes} already in EagleRoster` : '') + (skipped ? ` · ${skipped} skipped` : '') +
+    (replaced || removed ? ` · official results replaced ${replaced} live-PDF swim${replaced === 1 ? '' : 's'}${removed ? `, removed ${removed} the official file didn't have` : ''}` : ''), 'ok');
   showRecordApprovals();   // any new team records? ask before they count
 }
 
