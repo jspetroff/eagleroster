@@ -1316,13 +1316,18 @@ function nmMatch(name, gender, swimmers, aliases){
 }
 
 // ── MEET MANAGER RESULTS PDF (live results during a meet) ─────────────────
-// One or two columns per page. Header: "<Meet name> - 9/26/2026" (or "- 10/16/2026 to 10/18/2026").
-// Individual rows: "<place> Last, First M  YR TEAM  [x]time  [points]"; relays list no swimmer names, so they're skipped.
-// Every swim gets the meet's first date. src:'mmpdf' so the official .zip/.hy3 replaces them later.
+// One or two columns per page. Meet name is the line under the MEET MANAGER line ("GT vs Emory - 9/26/2026");
+// if it carries no date, the date on the MEET MANAGER line (when the PDF was made) is used.
+// Individual rows: "<place> Last, First  YR TEAM  [prelim] [x]time [std] [points]". On finals pages with a
+// Prelim column, the prelim swim is kept too. Relays: names row ("1) Last, First YR  2) r:+0.18 ...") and
+// cumulative splits rows; read only when 4 names are found and the last split equals the final time.
+// Every swim is src:'mmpdf' so the official .zip/.hy3 replaces it later.
 const MM_STROKE = { freestyle: 'FS', backstroke: 'BK', breaststroke: 'BR', butterfly: 'FL', im: 'IM', 'individual medley': 'IM' };
 function mmEvent(rest) {
   rest = rest.replace(/\s*-?\s*Time Trial\s*$/i, '').trim();
-  if (/Relay/i.test(rest)) return { relay: true };
+  const rl = rest.match(/^(\d+)\s+Yard\s+(Freestyle|Medley)\s+Relay$/i);
+  if (rl) return { relay: { dist: +rl[1], medley: /medley/i.test(rl[2]) } };
+  if (/Relay/i.test(rest)) return { relay: {} };
   const sw = rest.match(/^(\d+)\s+Yard\s+(.+)$/i);
   if (sw && MM_STROKE[sw[2].trim().toLowerCase()]) return { ev: `${+sw[1]} ${MM_STROKE[sw[2].trim().toLowerCase()]}` };
   if (/Platform/i.test(rest) && /Diving/i.test(rest)) return { ev: 'Platform' };
@@ -1331,33 +1336,58 @@ function mmEvent(rest) {
   return {};
 }
 const MM_RESULT = /^x?((?:\d+:)?\d+\.\d\d)[A-Za-z*]?$/;   // x = exhibition; trailing J/q/Q/* flags
+const mmSec = t => timeToSec(t);
+function mmName(s) {   // "Simmons Jr., Anthony A" -> "Anthony Simmons Jr."
+  const [last, firstRaw] = s.split(',').map(x => x.trim());
+  const first = (firstRaw || '').split(/\s+/).filter((w, i, a) => !(i === a.length - 1 && i > 0 && /^[A-Z]\.?$/.test(w))).join(' ');
+  return `${first} ${last}`;
+}
 function parseMmResultsPdf(pages, teamRe) {
   teamRe = teamRe || /^EMOR/i;
-  const out = { meet: '', date: '', rows: [], warnings: [], relaysSkipped: 0, isMm: false };
-  let ev = null, g = null, skipEv = false;
+  const out = { meet: '', date: '', rows: [], warnings: [], relaysSkipped: 0, relaysRead: 0, isMm: false, isPsych: false };
+  let ev = null, g = null, relayEv = null, hasPrelim = false, relay = null;
+  const skipWhy = {};
+  const finishRelay = () => {
+    const r = relay; relay = null;
+    if (!r) return;
+    const fail = why => { out.relaysSkipped++; (skipWhy[why] = skipWhy[why] || []).push(r.label); };
+    if (!r.ok) return;                                             // DQ / not a time
+    if (!relayEv || !relayEv.dist) return fail('unknown relay event');
+    if (r.names.filter(Boolean).length !== 4) return fail('no swimmer names in the PDF');
+    const n = r.cum.length, per = n / 4;
+    if (!n || n % 4 || Math.abs(mmSec(r.cum[n - 1]) - mmSec(r.time)) > 0.005) return fail('splits don\'t add up');
+    const legDist = relayEv.dist / 4;
+    let prev = 0;
+    for (let leg = 1; leg <= 4; leg++) {
+      const cum = mmSec(r.cum[leg * per - 1]);
+      out.rows.push({ kind: leg === 1 ? 'ind' : 'split', gender: r.g, event: `${legDist} ${relayEv.medley ? MEDLEY_LEGS[leg - 1] : 'FS'}`,
+        time: hy3Fmt(cum - prev), name: r.names[leg - 1].name, year: r.names[leg - 1].year, date: out.date, meet: out.meet, leadoff: leg === 1, src: 'mmpdf' });
+      prev = cum;
+    }
+    out.relaysRead++;
+  };
   pages.forEach(items => {
     items = items.filter(i => i.str && i.str.trim()).map(i => ({ ...i, str: i.str.trim() }));
     if (items.some(i => /MEET MANAGER/i.test(i.str))) out.isMm = true;
     if (items.some(i => /Psych Sheet/i.test(i.str))) out.isPsych = true;
-    // Meet name + date from the title line
-    if (!out.meet) {
-      const t = items.find(i => /\s-\s\d{1,2}\/\d{1,2}\/\d{4}/.test(i.str) && !/MEET MANAGER/i.test(i.str));
-      if (t) {
-        const m = t.str.match(/^(.*?)\s+-\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-        out.meet = m[1].trim(); out.date = `${m[4]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
-      }
+    // Page header: MEET MANAGER line, then meet title (+ maybe venue), then "Results - <day>"
+    const mmIt = items.find(i => /MEET MANAGER/i.test(i.str));
+    const resIt = items.find(i => /^Results\b/.test(i.str));
+    const title = mmIt && items.filter(i => i.y < mmIt.y - 2 && !/^Results\b/.test(i.str)).sort((a, b) => b.y - a.y)[0];
+    if (!out.meet && title) {
+      const m = title.str.match(/^(.*?)\s+-\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      const d = m ? m.slice(2) : (mmIt.str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/) || []).slice(1);
+      out.meet = (m ? m[1] : title.str).trim();
+      if (d.length === 3) out.date = `${d[2]}-${d[0].padStart(2, '0')}-${d[1].padStart(2, '0')}`;
     }
-    // Body starts below the first "Event"/"(Event" heading; column split from where event headings sit
-    const heads = items.filter(i => /^\(?Event\s+\d+/.test(i.str));
-    if (!heads.length) return;
-    // Body = everything below the page header (venue/MEET MANAGER line, meet title, "Results - <day>")
-    const hdr = items.filter(i => /MEET MANAGER|Site License|\s-\s\d{1,2}\/\d{1,2}\/\d{4}|^Results\b/i.test(i.str));
-    const topY = hdr.length ? Math.min(...hdr.map(i => i.y)) - 2 : Math.max(...heads.map(i => i.y)) + 2;
+    const topY = resIt ? resIt.y - 2 : title ? title.y - 2 : Infinity;
+    const body = items.filter(i => i.y < topY);
+    // Columns: the right column starts at its event headings
+    const heads = body.filter(i => /^\(?Event\s+\d+/.test(i.str));
     const xs = [...new Set(heads.map(i => Math.round(i.x)))].sort((a, b) => a - b);
-    const minX = xs[0], maxX = xs[xs.length - 1];
-    const cut = maxX - minX > 150 ? maxX - 6 : Infinity;   // right column starts at its event headings
+    const cut = xs.length && xs[xs.length - 1] - xs[0] > 150 ? xs[xs.length - 1] - 6 : Infinity;
     const cols = [[], []];
-    items.filter(i => i.y <= topY).forEach(i => cols[i.x >= cut ? 1 : 0].push(i));
+    body.forEach(i => cols[i.x >= cut ? 1 : 0].push(i));
     cols.forEach(ci => {
       const rows = [];
       ci.forEach(it => { let r = rows.find(r => Math.abs(r.y - it.y) < 2.5); if (!r) rows.push(r = { y: it.y, items: [] }); r.items.push(it); });
@@ -1365,28 +1395,53 @@ function parseMmResultsPdf(pages, teamRe) {
       rows.forEach(r => {
         const t = r.items.sort((a, b) => a.x - b.x).map(i => i.str);
         const line = t.join(' ');
-        const h = line.match(/^\(?Event\s+\d+\s+(Women|Men|Girls|Boys|Mixed)\s+(.+?)\)?$/i);
+        const h = line.match(/^(?:[A-Z] - Final\s*\.*\s*)?\(?Event\s+\d+\s+(Women|Men|Girls|Boys|Mixed)\s+(.+?)\)?$/i);
         if (h) {
-          g = /^(Women|Girls)/i.test(h[1]) ? 'W' : /^(Men|Boys)/i.test(h[1]) ? 'M' : null;
-          const e = mmEvent(h[2]);
-          skipEv = !!e.relay; ev = e.ev || null;
+          const ng = /^(Women|Girls)/i.test(h[1]) ? 'W' : /^(Men|Boys)/i.test(h[1]) ? 'M' : null, e = mmEvent(h[2]);
+          if (ng === g && ((e.ev && e.ev === ev) || (e.relay && relayEv && e.relay.dist === relayEv.dist && e.relay.medley === relayEv.medley))) return;   // continuation heading
+          finishRelay();
+          g = ng; ev = e.ev || null; relayEv = e.relay || null; hasPrelim = false;
           if (!e.ev && !e.relay) out.warnings.push('Skipped event: ' + line.replace(/^\(|\)$/g, ''));
           return;
         }
-        if (skipEv) { if (/^\*?\d+$/.test(t[0]) && t.some(x => teamRe.test(x))) out.relaysSkipped++; return; }
+        if (/\b(Finals|Prelim|Seed)\s+(Time|Score)\b/.test(line)) { hasPrelim = /Prelim\s+(Time|Score)/.test(line) && /Finals\s+(Time|Score)/.test(line); return; }
+        const place = /^(\*?\d+|---)$/.test(t[0]);
+        if (relayEv) {
+          if (place && t.length > 2) {                                // a relay result row
+            finishRelay();
+            const ti = t.findIndex(x => teamRe.test(x));
+            if (ti < 0 || !g) return;
+            const res = t.slice(ti + 1).filter(x => MM_RESULT.test(x));
+            relay = { g, label: `${g === 'W' ? 'Women' : 'Men'} ${relayEv.dist || ''} ${relayEv.medley ? 'medley' : 'free'} relay ${t[ti + 1] || ''}`.replace(/\s+/g, ' '),
+              ok: t[0] !== '---' && res.length > 0, time: res.length ? res[res.length - 1].match(MM_RESULT)[1] : '', names: [], cum: [] };
+            return;
+          }
+          if (!relay) return;
+          const nm = t.filter(x => /^[1-4]\)/.test(x));
+          if (nm.length) {
+            nm.forEach(x => {
+              const s = x.replace(/^[1-4]\)\s*/, '').replace(/^r:\S+\s*/, '');
+              const y = s.match(/\s(FR|SO|JR|SR|GS|GR|5Y|6Y)$/);
+              relay.names[+x[0] - 1] = { name: mmName(y ? s.slice(0, y.index) : s), year: y ? y[1] : '' };
+            });
+            return;
+          }
+          t.forEach(x => { const m = x.replace(/^r:\S+\s*/, '').match(/^((?:\d+:)?\d+\.\d\d)(?:\s*\(.*\))?$/); if (m) relay.cum.push(m[1]); });   // lead-off item can carry the reaction time
+          return;
+        }
         if (!ev || !g || !/^\*?\d+$/.test(t[0]) || !/,/.test(t[1] || '')) return;   // place (* = tie) + "Last, First"
         const ti = t.findIndex(x => teamRe.test(x)); if (ti < 0) return;
         const res = t.slice(ti + 1).filter(x => MM_RESULT.test(x));
         if (!res.length) return;                                   // DQ / NS / scratch
-        const time = res[res.length - 1].match(MM_RESULT)[1];      // last time on the row is the result (seed/prelim come first)
-        const [last, firstRaw] = t[1].split(',').map(s => s.trim());
-        const first = (firstRaw || '').split(/\s+/).filter((w, i, a) => !(i === a.length - 1 && i > 0 && /^[A-Z]\.?$/.test(w))).join(' ');
-        const yr = (t.slice(2, ti).find(x => /^(FR|SO|JR|SR|GS|GR|5Y|6Y)$/.test(x)) || '');
-        out.rows.push({ kind: 'ind', gender: g, event: ev, time, name: `${first} ${last}`, year: yr, date: out.date, meet: out.meet, leadoff: false, src: 'mmpdf' });
+        const yr = t.slice(2, ti).find(x => /^(FR|SO|JR|SR|GS|GR|5Y|6Y)$/.test(x)) || '';
+        const base = { kind: 'ind', gender: g, event: ev, name: mmName(t[1]), year: yr, date: out.date, meet: out.meet, leadoff: false, src: 'mmpdf' };
+        out.rows.push({ ...base, time: res[res.length - 1].match(MM_RESULT)[1] });     // the result (seed/prelim columns come first)
+        if (hasPrelim && res.length >= 2) out.rows.push({ ...base, time: res[res.length - 2].match(MM_RESULT)[1] });   // that morning's prelim swim
       });
     });
   });
-  if (out.relaysSkipped) out.warnings.push(`${out.relaysSkipped} Emory relay${out.relaysSkipped > 1 ? 's' : ''} skipped — the PDF doesn't name relay swimmers, so splits come with the official .zip`);
+  finishRelay();
+  Object.entries(skipWhy).forEach(([why, l]) => out.warnings.push(`${l.length} Emory relay${l.length > 1 ? 's' : ''} skipped (${why})${why.startsWith('no swimmer') ? ' — splits come with the official .zip' : ': ' + l.join(', ')}`));
   return out;
 }
 
@@ -1435,7 +1490,8 @@ async function handleResultsFiles(fileList) {
       if (mm.isPsych) { fileInfo.push({ name: f.name, err: 'This is a psych sheet (entries, not results) — upload it on Reports → Upload meet entries' }); continue; }
       if (mm.isMm && mm.meet) {   // Meet Manager results PDF (live, during a meet)
         if (!mm.rows.length) { fileInfo.push({ name: f.name, err: 'No Emory swims found in these results', warnings: mm.warnings }); continue; }
-        fileInfo.push({ name: f.name, label: `Live results PDF: ${mm.meet} (${mm.date}) · ${mm.rows.length} individual swims — replaced when you import the official .zip`, warnings: mm.warnings });
+        const ni = mm.rows.filter(r => r.kind === 'ind' && !r.leadoff).length;
+        fileInfo.push({ name: f.name, label: `Live results PDF: ${mm.meet} (${mm.date}) · ${ni} individual swims${mm.relaysRead ? ` + ${mm.relaysRead} relay${mm.relaysRead > 1 ? 's' : ''} (lead-offs and splits)` : ''} — replaced when you import the official .zip`, warnings: mm.warnings });
         mm.rows.forEach(r => rows.push(r));
         continue;
       }
