@@ -188,7 +188,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 /* Recruit board tags (white paper inserts, true size) */
 :root{--tag-w:6in;--tag-h:.875in;--tag-font:Impact,Haettenschweiler,'Anton','Arial Narrow Bold',sans-serif;}
 .rtag{width:var(--tag-w);height:var(--tag-h);background:#fff;color:#012169;display:grid;grid-template-rows:70% 30%;padding:0 .08in;overflow:hidden;flex:none;box-shadow:0 0 0 1px #888;}
-.rtag .top{display:flex;align-items:center;justify-content:space-between;gap:.12in;min-width:0;}
+.rtag .top{display:flex;align-items:flex-end;justify-content:space-between;gap:.12in;min-width:0;padding:.07in 0 .02in;}
 .rtag .nm,.rtag .tw{font-family:var(--tag-font);white-space:nowrap;line-height:1;font-weight:400;}
 .rtag .nm{flex:1 1 auto;min-width:0;font-style:italic;padding-right:.04in;}
 .rtag .tw{flex:0 1 auto;text-align:right;}
@@ -3225,7 +3225,7 @@ function tagEl(t) {
 // Shrink name and hometown until they share the row; hometown is held to about a third of the width
 function fitTag(el) {
   const top = el.querySelector('.top'), nm = el.querySelector('.nm'), tw = el.querySelector('.tw');
-  const h = top.clientHeight; if (!h) return;
+  const cs = getComputedStyle(top), h = top.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom); if (h <= 0) return;
   let ns = h * 0.92, ts = Math.min(h * 0.42, 24);
   nm.style.fontSize = ns + 'px'; tw.style.fontSize = ts + 'px';
   for (let i = 0; i < 80; i++) {
