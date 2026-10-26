@@ -192,8 +192,9 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .rtag .nm,.rtag .tw{font-family:var(--tag-font);white-space:nowrap;line-height:1;font-weight:400;}
 .rtag .nm{flex:1 1 auto;min-width:0;font-style:italic;padding-right:.04in;}
 .rtag .tw{flex:0 1 auto;text-align:right;}
-.rtag .bot{border-top:1px solid #000;display:flex;align-items:center;justify-content:space-between;}
-.rtag .ll{font-family:Calibri,Carlito,Arial,sans-serif;font-size:8pt;display:flex;align-items:center;gap:4px;margin-left:40%;}
+.rtag .bot{border-top:1px solid #000;display:grid;grid-template-columns:40% 1fr auto;align-items:center;}
+.rtag .nt{font-family:Calibri,Carlito,Arial,sans-serif;font-size:9pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:.08in;}
+.rtag .ll{font-family:Calibri,Carlito,Arial,sans-serif;font-size:8pt;display:flex;align-items:center;gap:4px;}
 .rtag .ll b,.rtag .yr{font-family:var(--tag-font);font-size:10pt;font-weight:400;}
 .rtag .yr{font-size:15pt;line-height:1;}
 #tagPrint{display:none;}
@@ -566,6 +567,8 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
         <label class="check-item" style="margin:0"><input type="checkbox" id="tgDocs"> Documents</label>
         <label class="check-item" style="margin:0"><input type="checkbox" id="tgVisit"> Visited</label>
       </div>
+      <div class="frow" style="margin-bottom:.4rem"><div><label for="tgNotes">Notes</label><textarea id="tgNotes" rows="2" placeholder="e.g. Transfer from Kenyon" oninput="renderTagPreview()"></textarea></div></div>
+      <label class="check-item" style="margin-bottom:.75rem"><input type="checkbox" id="tgNoteTag" onchange="renderTagPreview()"> Print note on the tag (bottom left)</label>
       <div style="display:flex;gap:.5rem">
         <button class="btn bprimary" id="tgSave" onclick="saveTag()">Add tag</button>
         <button class="btn" onclick="resetTagForm()">Clear</button>
@@ -592,7 +595,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
       </div>
     </div>
     <div style="overflow-x:auto"><table class="tbl">
-      <thead><tr><th>Print</th><th>Name</th><th>Hometown</th><th>HS class</th><th>Docs</th><th>Visited</th><th>LL submitted</th><th>LL approved</th><th>Source</th><th></th></tr></thead>
+      <thead><tr><th>Print</th><th>Name</th><th>Hometown</th><th>HS class</th><th>Docs</th><th>Visited</th><th>LL submitted</th><th>LL approved</th><th>Notes</th><th>Source</th><th></th></tr></thead>
       <tbody id="tagList"></tbody>
     </table></div>
   </div>
@@ -3216,7 +3219,7 @@ function tagEl(t) {
   const d = document.createElement('div');
   d.className = 'rtag';
   d.innerHTML = `<div class="top"><div class="nm">${esc(t.name)}${t.diver ? ' (D)' : ''}</div><div class="tw">${esc(t.town || '')}</div></div>
-    <div class="bot"><div class="ll">Likely Letter: <b>${esc(llText(t))}</b></div><div class="yr">${esc(t.yr || '')}</div></div>`;
+    <div class="bot"><div class="nt">${t.noteTag && t.notes ? esc(t.notes.split('\n')[0]) : ''}</div><div class="ll">Likely Letter: <b>${esc(llText(t))}</b></div><div class="yr">${esc(t.yr || '')}</div></div>`;
   return d;
 }
 // Shrink name and hometown until they share the row; hometown is held to about a third of the width
@@ -3237,7 +3240,8 @@ function tagForm() {
   if (/\(D\)\s*$/i.test(name)) { name = name.replace(/\s*\(D\)\s*$/i, ''); diver = true; }
   return { name, town: document.getElementById('tgTown').value.trim(), yr: document.getElementById('tgYr').value.trim(),
            llDate: document.getElementById('tgLLDate').value, llOk: document.getElementById('tgLLOk').checked,
-           docs: document.getElementById('tgDocs').checked, visited: document.getElementById('tgVisit').checked, diver };
+           docs: document.getElementById('tgDocs').checked, visited: document.getElementById('tgVisit').checked,
+           notes: document.getElementById('tgNotes').value.trim(), noteTag: document.getElementById('tgNoteTag').checked, diver };
 }
 function renderTagPreview() {
   const t = tagForm(); if (!t.name) t.name = 'Recruit Name';
@@ -3255,9 +3259,10 @@ function renderTags() {
       <td><input type="checkbox" style="width:auto" ${t.visited ? 'checked' : ''} onchange="toggleTag(${i},'visited',this.checked)" aria-label="Visited"></td>
       <td style="font-variant-numeric:tabular-nums">${t.llDate ? fmtShort(t.llDate) : esc(t.ll || '')}</td>
       <td><input type="checkbox" style="width:auto" ${t.llOk ? 'checked' : ''} onchange="toggleTag(${i},'llOk',this.checked)" aria-label="Likely Letter approved"></td>
+      <td style="max-width:220px;font-size:.75rem;color:var(--text-dim);white-space:pre-wrap">${esc(t.notes || '')}${t.noteTag && t.notes ? ' <span class="badge by1">ON TAG</span>' : ''}</td>
       <td>${t.sid ? '<span class="badge bfr">ROSTER</span>' : '<span class="badge bbk">BOARD</span>'}</td>
       <td style="white-space:nowrap;text-align:right"><button class="btn bsm" onclick="editTag(${i})">Edit</button> <button class="btn bsm bdanger" onclick="removeTag(${i},this)">Remove</button></td>
-    </tr>`).join('') : '<tr><td colspan="10" style="color:var(--text-dim)">No tags yet. Add one above, paste your board list, or pull incoming athletes from the roster.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="11" style="color:var(--text-dim)">No tags yet. Add one above, paste your board list, or pull incoming athletes from the roster.</td></tr>';
   renderTagCount();
   renderTagPreview();
 }
@@ -3280,13 +3285,14 @@ function editTag(i) {
   document.getElementById('tgYr').value = t.yr || ''; document.getElementById('tgLLDate').value = t.llDate || '';
   document.getElementById('tgDiver').checked = !!t.diver; document.getElementById('tgLLOk').checked = !!t.llOk;
   document.getElementById('tgDocs').checked = !!t.docs; document.getElementById('tgVisit').checked = !!t.visited;
+  document.getElementById('tgNotes').value = t.notes || ''; document.getElementById('tgNoteTag').checked = !!t.noteTag;
   document.getElementById('tagFormTitle').textContent = 'Edit tag'; document.getElementById('tgSave').textContent = 'Update tag';
   renderTagPreview(); window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function resetTagForm() {
   _tagEdit = null;
-  ['tgName','tgTown','tgYr','tgLLDate'].forEach(id => document.getElementById(id).value = '');
-  ['tgDiver','tgLLOk','tgDocs','tgVisit'].forEach(id => document.getElementById(id).checked = false);
+  ['tgName','tgTown','tgYr','tgLLDate','tgNotes'].forEach(id => document.getElementById(id).value = '');
+  ['tgDiver','tgLLOk','tgDocs','tgVisit','tgNoteTag'].forEach(id => document.getElementById(id).checked = false);
   document.getElementById('tagFormTitle').textContent = 'New tag'; document.getElementById('tgSave').textContent = 'Add tag';
   renderTagPreview();
 }
