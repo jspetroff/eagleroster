@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>EagleRoster</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&display=swap">
 <!-- Firebase -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -184,6 +185,17 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .tt-meet{font-size:.72rem;color:var(--text-dim);}
 .imp-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.4rem 0;border-bottom:1px solid rgba(42,48,69,.4);font-size:.8rem;}
 .imp-row select{width:auto;max-width:230px;font-size:.75rem;padding:.25rem .4rem;}
+/* Recruit board tags (white paper inserts, true size) */
+:root{--tag-w:6in;--tag-h:.875in;--tag-font:Impact,Haettenschweiler,'Anton','Arial Narrow Bold',sans-serif;}
+.rtag{width:var(--tag-w);height:var(--tag-h);background:#fff;color:#000;display:grid;grid-template-rows:70% 30%;padding:0 .08in;overflow:hidden;flex:none;box-shadow:0 0 0 1px #888;}
+.rtag .top{display:flex;align-items:center;justify-content:space-between;gap:.12in;min-width:0;}
+.rtag .nm,.rtag .tw{font-family:var(--tag-font);white-space:nowrap;line-height:1;font-weight:400;}
+.rtag .nm{flex:1 1 auto;min-width:0;}
+.rtag .tw{flex:0 1 auto;text-align:right;}
+.rtag .bot{border-top:1px solid #000;display:flex;align-items:center;justify-content:space-between;}
+.rtag .ll{font-family:Calibri,Carlito,Arial,sans-serif;font-size:8pt;display:flex;align-items:center;gap:4px;margin-left:40%;}
+.rtag .ll b,.rtag .yr{font-family:var(--tag-font);font-size:10pt;font-weight:400;}
+#tagPrint{display:none;}
 /* Print */
 .print-only,.code-print{display:none;}
 @media print {
@@ -192,6 +204,9 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   body{background:#fff;color:#000;font-size:10px;}
   .hdr,.tabs,.fbar,.no-print,.sec-hdr,#ttHelp,#loginScreen,.modal{display:none!important;}
   .print-only{display:block!important;}
+  body.ptags #appRoot{display:none!important;}
+  body.ptags #tagPrint{display:flex!important;flex-direction:column;align-items:center;}
+  body.ptags #tagPrint .rtag{box-shadow:none;outline:.5px dashed #999;margin-bottom:.12in;break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .code-print{display:inline!important;font-family:var(--fm);font-weight:700;}
   .content{padding:0;max-width:none;}
   #ttList,#recList,#recBanner,#recHelp,#stdList,#stdNote{display:none!important;}
@@ -278,6 +293,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div class="tab" onclick="switchTab('toptimes',this)">05 · Top Times</div>
   <div class="tab" onclick="switchTab('records',this)">06 · Records</div>
   <div class="tab" onclick="switchTab('standards',this)">07 · Standards</div>
+  <div class="tab" onclick="switchTab('tags',this)">08 · Tags</div>
 </div>
 
 <!-- ═══════════════════════════════════ TAB 1: ROSTER ═══════════════════════════════════ -->
@@ -522,6 +538,73 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div class="tt-grid" id="ttList"></div>
 </div>
 
+<!-- ═══════════════════════════════════ TAB 8: RECRUIT TAGS ═══════════════════════════════════ -->
+<div id="tab-tags" class="tp content">
+  <div class="sec-hdr">
+    <h3>Recruit Board Tags</h3>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn bsm" onclick="pullRosterRecruits()" title="Adds incoming athletes from the roster who don't have a tag yet">&#8681; Pull incoming from roster</button>
+      <button class="btn bsm bprimary" onclick="printTags()">&#128424; Print selected</button>
+    </div>
+  </div>
+  <div id="tagStatus"></div>
+  <div class="cgrid">
+    <div class="card">
+      <div class="ct" id="tagFormTitle">New tag</div>
+      <div class="frow f2">
+        <div><label for="tgName">Name</label><input id="tgName" type="text" oninput="renderTagPreview()"></div>
+        <div><label for="tgTown">Hometown</label><input id="tgTown" type="text" placeholder="City, ST" oninput="renderTagPreview()"></div>
+      </div>
+      <div class="frow f2">
+        <div><label for="tgYr">HS class</label><input id="tgYr" type="text" inputmode="numeric" placeholder="2027" oninput="renderTagPreview()"></div>
+        <div><label for="tgLLDate">Likely Letter submitted</label><input id="tgLLDate" type="date" onchange="renderTagPreview()"></div>
+      </div>
+      <div class="frow f2" style="margin-bottom:.75rem">
+        <label class="check-item" style="margin:0"><input type="checkbox" id="tgDiver" onchange="renderTagPreview()"> Diver — adds (D)</label>
+        <label class="check-item" style="margin:0"><input type="checkbox" id="tgLLOk" onchange="renderTagPreview()"> Likely Letter approved</label>
+        <label class="check-item" style="margin:0"><input type="checkbox" id="tgDocs"> Documents</label>
+        <label class="check-item" style="margin:0"><input type="checkbox" id="tgVisit"> Visited</label>
+      </div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn bprimary" id="tgSave" onclick="saveTag()">Add tag</button>
+        <button class="btn" onclick="resetTagForm()">Clear</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ct">Preview · actual size at 100% zoom</div>
+      <div style="overflow-x:auto;padding:.5rem 0"><div id="tagPreview"></div></div>
+      <details style="margin-top:.75rem;font-size:.78rem">
+        <summary style="cursor:pointer;color:var(--text-dim)">Insert size</summary>
+        <div class="frow f2" style="margin-top:.5rem">
+          <div><label for="tgW">Width (in)</label><input id="tgW" type="number" step="0.0625" min="1" max="8" onchange="setTagSize()"></div>
+          <div><label for="tgH">Height (in)</label><input id="tgH" type="number" step="0.0625" min="0.4" max="2" onchange="setTagSize()"></div>
+        </div>
+      </details>
+    </div>
+  </div>
+  <div class="card">
+    <div class="sec-hdr" style="margin-bottom:.5rem">
+      <div class="ct" style="margin:0" id="tagCount">Tags</div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn bsm" onclick="selectTags(true)">Select all</button>
+        <button class="btn bsm" onclick="selectTags(false)">Select none</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto"><table class="tbl">
+      <thead><tr><th>Print</th><th>Name</th><th>Hometown</th><th>HS class</th><th>Docs</th><th>Visited</th><th>LL submitted</th><th>LL approved</th><th>Source</th><th></th></tr></thead>
+      <tbody id="tagList"></tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <details>
+      <summary style="cursor:pointer;font-size:.82rem">Paste a list from a spreadsheet</summary>
+      <p style="font-size:.75rem;color:var(--text-dim);margin:.5rem 0">Columns in this order: Name, Hometown, HS class. Track documents, visits and Likely Letters in the list afterward. One recruit per row. Put (D) after a diver's name.</p>
+      <textarea id="tgPaste" rows="5" style="font-family:var(--fm)"></textarea>
+      <button class="btn bsm" style="margin-top:.5rem" onclick="importTags()">Add these</button>
+    </details>
+  </div>
+</div>
+
 <!-- ═══════ ADD/EDIT SWIMMER MODAL ═══════ -->
 <div class="modal" id="swimmerModal">
   <div class="modal-box">
@@ -616,6 +699,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 </div>
 
 </div><!-- /appRoot -->
+<div id="tagPrint"></div>
 
 <script>
 // ── CONSTANTS ─────────────────────────────────────────────────────────────
@@ -737,6 +821,7 @@ function switchTab(id, el) {
   if (id==='toptimes') renderTopTimes();
   if (id==='records') renderRecords();
   if (id==='standards') renderStandards();
+  if (id==='tags') renderTags();
 }
 
 // ── ROSTER RENDERING ──────────────────────────────────────────────────────
@@ -1703,6 +1788,7 @@ function setMeetCode(i, el) {
   save();
   showParseStatus(`✓ ${m.name}: ${swims.length} swims set to ${code}`, 'ok');
   if (document.getElementById('tab-toptimes').classList.contains('act')) renderTopTimes();
+  if (document.getElementById('tab-tags').classList.contains('act')) renderTags();
 }
 
 function showParseStatus(msg, type) {
@@ -3099,6 +3185,154 @@ function applyScraperImport(data) {
   renderAll();
   alert(`✅ Import complete from SwimCloud scrape (${data.scraped||'unknown date'})\n\n• ${added} new swimmers added\n• ${updated} existing swimmers updated\n• ${timesUpdated} time entries merged`);
 }
+
+// ── RECRUIT BOARD TAGS ───────────────────────────────────────────────────
+// Paper inserts for the 1"x6" magnetic C-channel holders. List lives in R.tags (synced with the roster).
+// A tag pulled from the roster keeps the athlete's id in sid so it isn't pulled twice.
+let _tagEdit = null;
+function tagsArr() { if (!Array.isArray(R.tags)) R.tags = []; return R.tags; }
+function tagSize() { return Object.assign({ w: 6, h: 0.875 }, R.tagSize || {}); }
+function applyTagSize() {
+  const z = tagSize();
+  document.documentElement.style.setProperty('--tag-w', z.w + 'in');
+  document.documentElement.style.setProperty('--tag-h', z.h + 'in');
+  document.getElementById('tgW').value = z.w; document.getElementById('tgH').value = z.h;
+}
+function setTagSize() {
+  R.tagSize = { w: +document.getElementById('tgW').value || 6, h: +document.getElementById('tgH').value || 0.875 };
+  save(); applyTagSize(); renderTagPreview();
+}
+// Printed after "Likely Letter:" — submitted date, plus a check once approved
+function llText(t) {
+  let d = '';
+  if (t.llDate) { const [y, m, dd] = t.llDate.split('-'); d = `${+m}/${+dd}/${y.slice(2)}`; }
+  else if (t.ll) d = t.ll;   // older free-text entries
+  return d + (t.llOk ? (d ? ' ✓' : '✓') : '');
+}
+function toggleTag(i, key, on) { const t = tagsArr()[i]; if (!t) return; t[key] = on; save(); if (key === 'sel') renderTagCount(); }
+function fmtShort(iso) { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${+m}/${+d}/${y.slice(2)}`; }
+function tagEl(t) {
+  const d = document.createElement('div');
+  d.className = 'rtag';
+  d.innerHTML = `<div class="top"><div class="nm">${esc(t.name)}${t.diver ? ' (D)' : ''}</div><div class="tw">${esc(t.town || '')}</div></div>
+    <div class="bot"><div class="ll">Likely Letter: <b>${esc(llText(t))}</b></div><div class="yr">${esc(t.yr || '')}</div></div>`;
+  return d;
+}
+// Shrink name and hometown until they share the row; hometown is held to about a third of the width
+function fitTag(el) {
+  const top = el.querySelector('.top'), nm = el.querySelector('.nm'), tw = el.querySelector('.tw');
+  const h = top.clientHeight; if (!h) return;
+  let ns = h * 0.92, ts = Math.min(h * 0.42, 24);
+  nm.style.fontSize = ns + 'px'; tw.style.fontSize = ts + 'px';
+  for (let i = 0; i < 80; i++) {
+    const w = top.clientWidth;
+    if (nm.scrollWidth + tw.scrollWidth + 12 <= w) break;
+    if (tw.scrollWidth > w * 0.36 && ts > 9) { ts *= 0.95; tw.style.fontSize = ts + 'px'; }
+    else { ns *= 0.96; nm.style.fontSize = ns + 'px'; }
+  }
+}
+function tagForm() {
+  let name = document.getElementById('tgName').value.trim(), diver = document.getElementById('tgDiver').checked;
+  if (/\(D\)\s*$/i.test(name)) { name = name.replace(/\s*\(D\)\s*$/i, ''); diver = true; }
+  return { name, town: document.getElementById('tgTown').value.trim(), yr: document.getElementById('tgYr').value.trim(),
+           llDate: document.getElementById('tgLLDate').value, llOk: document.getElementById('tgLLOk').checked,
+           docs: document.getElementById('tgDocs').checked, visited: document.getElementById('tgVisit').checked, diver };
+}
+function renderTagPreview() {
+  const t = tagForm(); if (!t.name) t.name = 'Recruit Name';
+  const p = document.getElementById('tagPreview'); p.innerHTML = '';
+  const el = tagEl(t); p.appendChild(el); fitTag(el);
+}
+function tagMsg(html, type) { document.getElementById('tagStatus').innerHTML = html ? `<div class="st ${type||'stok'}">${html}</div>` : ''; }
+function renderTags() {
+  applyTagSize();
+  const tags = tagsArr(), tb = document.getElementById('tagList');
+  tb.innerHTML = tags.length ? tags.map((t, i) => `<tr>
+      <td><input type="checkbox" style="width:auto" ${t.sel !== false ? 'checked' : ''} onchange="toggleTag(${i},'sel',this.checked)" aria-label="Select for printing"></td>
+      <td>${esc(t.name)}${t.diver ? ' (D)' : ''}</td><td>${esc(t.town || '')}</td><td>${esc(t.yr || '')}</td>
+      <td><input type="checkbox" style="width:auto" ${t.docs ? 'checked' : ''} onchange="toggleTag(${i},'docs',this.checked)" aria-label="Documents"></td>
+      <td><input type="checkbox" style="width:auto" ${t.visited ? 'checked' : ''} onchange="toggleTag(${i},'visited',this.checked)" aria-label="Visited"></td>
+      <td style="font-variant-numeric:tabular-nums">${t.llDate ? fmtShort(t.llDate) : esc(t.ll || '')}</td>
+      <td><input type="checkbox" style="width:auto" ${t.llOk ? 'checked' : ''} onchange="toggleTag(${i},'llOk',this.checked)" aria-label="Likely Letter approved"></td>
+      <td>${t.sid ? '<span class="badge bfr">ROSTER</span>' : '<span class="badge bbk">BOARD</span>'}</td>
+      <td style="white-space:nowrap;text-align:right"><button class="btn bsm" onclick="editTag(${i})">Edit</button> <button class="btn bsm bdanger" onclick="removeTag(${i},this)">Remove</button></td>
+    </tr>`).join('') : '<tr><td colspan="10" style="color:var(--text-dim)">No tags yet. Add one above, paste your board list, or pull incoming athletes from the roster.</td></tr>';
+  renderTagCount();
+  renderTagPreview();
+}
+function renderTagCount() {
+  const t = tagsArr(), n = t.filter(x => x.sel !== false).length;
+  document.getElementById('tagCount').textContent = t.length ? `Tags · ${n} of ${t.length} selected` : 'Tags';
+}
+function saveTag() {
+  const t = tagForm();
+  if (!t.name) { tagMsg('Name is required.', 'sterr'); return; }
+  const tags = tagsArr();
+  if (_tagEdit !== null) { const o = tags[_tagEdit]; tags[_tagEdit] = { ...o, ...t }; if (t.llDate) delete tags[_tagEdit].ll; tagMsg('Tag updated.'); }
+  else { tags.push(t); tagMsg(`Added ${esc(t.name)}.`); }
+  save(); resetTagForm(); renderTags();
+}
+function editTag(i) {
+  const t = tagsArr()[i]; if (!t) return;
+  _tagEdit = i;
+  document.getElementById('tgName').value = t.name; document.getElementById('tgTown').value = t.town || '';
+  document.getElementById('tgYr').value = t.yr || ''; document.getElementById('tgLLDate').value = t.llDate || '';
+  document.getElementById('tgDiver').checked = !!t.diver; document.getElementById('tgLLOk').checked = !!t.llOk;
+  document.getElementById('tgDocs').checked = !!t.docs; document.getElementById('tgVisit').checked = !!t.visited;
+  document.getElementById('tagFormTitle').textContent = 'Edit tag'; document.getElementById('tgSave').textContent = 'Update tag';
+  renderTagPreview(); window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function resetTagForm() {
+  _tagEdit = null;
+  ['tgName','tgTown','tgYr','tgLLDate'].forEach(id => document.getElementById(id).value = '');
+  ['tgDiver','tgLLOk','tgDocs','tgVisit'].forEach(id => document.getElementById(id).checked = false);
+  document.getElementById('tagFormTitle').textContent = 'New tag'; document.getElementById('tgSave').textContent = 'Add tag';
+  renderTagPreview();
+}
+function removeTag(i, btn) {
+  if (!btn.dataset.armed) { btn.dataset.armed = 1; btn.textContent = 'Confirm'; setTimeout(renderTags, 3000); return; }
+  tagsArr().splice(i, 1); if (_tagEdit === i) resetTagForm(); save(); renderTags();
+}
+function selectTags(on) { tagsArr().forEach(t => t.sel = on); save(); renderTags(); }
+function importTags() {
+  const rows = document.getElementById('tgPaste').value.split(/\r?\n/).map(r => r.trim()).filter(Boolean);
+  let n = 0;
+  rows.forEach(r => {
+    const c = r.split('\t').map(x => x.trim()); if (!c[0]) return;
+    let name = c[0], diver = false;
+    if (/\(D\)\s*$/i.test(name)) { name = name.replace(/\s*\(D\)\s*$/i, ''); diver = true; }
+    tagsArr().push({ name, town: c[1] || '', yr: c[2] || '', diver }); n++;
+  });
+  document.getElementById('tgPaste').value = '';
+  if (n) { save(); renderTags(); tagMsg(`Added ${n} tag${n > 1 ? 's' : ''}.`); }
+  else tagMsg('Nothing found. Copy the cells straight from the spreadsheet so the columns are tab-separated.', 'sterr');
+}
+// Incoming roster athletes → tags. HS class = Emory grad year − 4. Hometown and Likely Letter are left to fill in.
+function pullRosterRecruits() {
+  const have = new Set(tagsArr().filter(t => t.sid).map(t => t.sid));
+  const inc = Object.values(R.swimmers).filter(s => classOf(s) === 'INC' && !have.has(s.id))
+    .sort((a, b) => (a.last + a.first).localeCompare(b.last + b.first));
+  inc.forEach(s => tagsArr().push({ sid: s.id, name: `${s.first} ${s.last}`.trim(), town: '',
+    yr: s.gradYear ? String(+s.gradYear - 4) : '', diver: isDiver(s) }));
+  if (inc.length) { save(); renderTags(); tagMsg(`Added ${inc.length} incoming athlete${inc.length > 1 ? 's' : ''} from the roster. Add their hometowns with Edit.`); }
+  else tagMsg('Every incoming athlete on the roster already has a tag.', 'stinfo');
+}
+function buildTagPrint() {
+  const sheet = document.getElementById('tagPrint'); sheet.innerHTML = '';
+  const list = tagsArr().filter(t => t.sel !== false);
+  list.forEach(t => sheet.appendChild(tagEl(t)));
+  // lay out off-screen so the text can be measured and fitted
+  sheet.style.cssText = 'display:flex;flex-direction:column;position:absolute;left:-9999px;top:0';
+  sheet.querySelectorAll('.rtag').forEach(fitTag);
+  sheet.style.cssText = '';
+  return list.length;
+}
+function printTags() {
+  if (!buildTagPrint()) { tagMsg('Select at least one tag to print.', 'sterr'); return; }
+  document.body.classList.add('ptags');
+  window.print();
+}
+window.addEventListener('afterprint', () => document.body.classList.remove('ptags'));
 
 // ── RENDER ALL ─────────────────────────────────────────────────────────────
 function renderAll() {
