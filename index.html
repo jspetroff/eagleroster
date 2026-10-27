@@ -201,6 +201,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 /* Print */
 .print-only,.code-print{display:none;}
 @media print {
+  .ttpack + .ttpack{break-before:page;}
   @page { margin: .5in; }
   :root{--bg:#fff;--bg2:#fff;--bg3:#fff;--border:#bbb;--text:#000;--text-dim:#333;--gold:#000;--green:#000;--blue:#000;--purple:#000;}
   body{background:#fff;color:#000;font-size:10px;}
@@ -509,6 +510,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
       <button class="btn bsm" onclick="document.getElementById('d3File').click()" title="USA Swimming NCAA Top Times Report PDF(s); gender comes from the file name">&#8679; DIII ranks</button>
       <input type="file" id="d3File" accept=".pdf" multiple style="display:none" onchange="loadD3Ranks(this.files).finally(()=>{this.value=''})">
       <button class="btn bsm" onclick="printTopTimes()">&#128424; Print</button>
+      <button class="btn bsm" onclick="printTopTimesPack()" title="Women then men: by name (all swims), by event (best per code), relay splits (best per code) — all codes, this season">&#128424; Post-meet pack</button>
     </div>
   </div>
   <div id="d3Status" style="font-size:.72rem;font-family:var(--fm);color:var(--text-dim);margin:-.25rem 0 .75rem"></div>
@@ -1849,8 +1851,33 @@ function setSwimCode(id, code, el) {
 // Compact paper layout: meets listed once with a date key, three columns of one-line rows
 function printTopTimes() {
   renderTopTimes();
+  const html = ttPrintHtml();
+  if (!html) { alert('Nothing to print for this selection.'); return; }
+  document.getElementById('ttPrint').innerHTML = html;
+  window.print();
+}
+
+// After a meet: by name (all swims), by event (best per code), relay splits (best per code) — women then men,
+// all rest codes, the selected season. One print job, each report on its own page; the screen view is restored.
+const TT_PACK = [['W','ind','name',true], ['W','ind','event','code'], ['W','split','event','code'],
+                 ['M','ind','name',true], ['M','ind','event','code'], ['M','split','event','code']];
+function printTopTimesPack() {
+  const keep = { ..._tt, codes: new Set(_tt.codes) };
+  const parts = TT_PACK.map(([gender, kind, view, all]) => {
+    Object.assign(_tt, { gender, kind, view, all, codes: new Set(REST_CODES) });
+    renderTopTimes();
+    return ttPrintHtml() || `<div class="ph"><b>Emory Swimming &amp; Diving — ${gender === 'W' ? 'Women' : 'Men'}'s ${kind === 'split' ? 'Relay Split' : 'Individual'} Top Times</b> &nbsp;${_tt.season} — no times yet</div>`;
+  });
+  Object.assign(_tt, keep);
+  renderTopTimes();
+  document.getElementById('ttPrint').innerHTML = parts.map(p => `<div class="ttpack">${p}</div>`).join('');
+  window.print();
+}
+
+// Print-ready HTML for the current Top Times selection ('' when there's nothing to show)
+function ttPrintHtml() {
   const { byEvent, events } = window._ttLast || { byEvent: {}, events: [] };
-  if (!events.length) { alert('Nothing to print for this selection.'); return; }
+  if (!events.length) return '';
   const md = d => `${+d.slice(5,7)}/${+d.slice(8,10)}`;
   // Short meet name for the line: drop year/season tags ("2026-2027 GT vs Emory" -> "GT vs Emory")
   const sm = m => esc((m || '').replace(/\b(19|20)\d\d(\s*[-–\/]\s*(19|20)?\d\d)?\b/g, ' ').replace(/\s+/g, ' ').trim() || m);
@@ -1885,12 +1912,10 @@ function printTopTimes() {
       }).join('') + '</table>';
     });
   }
-  document.getElementById('ttPrint').innerHTML =
-    `<div class="ph"><b>Emory Swimming &amp; Diving — ${_tt.gender==='W'?'Women':'Men'}'s ${_tt.kind==='split'?'Relay Split':'Individual'} Top Times</b>
+  return `<div class="ph"><b>Emory Swimming &amp; Diving — ${_tt.gender==='W'?'Women':'Men'}'s ${_tt.kind==='split'?'Relay Split':'Individual'} Top Times</b>
        &nbsp;${_tt.season} · ${_tt.view==='name'?'by name':'by event'} · ${codeTxt} · printed ${new Date().toLocaleDateString()}</div>
      <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · <span class="pbm">PB</span> = lifetime best · <span class="pbm vrm">VR</span> = set a team record · <span class="pbm stdm">A</span> <span class="pbm stdm">Q</span> <span class="pbm stdm">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · LO = relay lead-off · * = tie${Object.keys(window._d3 || {}).length ? ` · DIII #n = USA Swimming DIII rank (${R.d3Ranks[_tt.gender].date}): G ≤ ${D3_TIERS[_tt.gender][0]}, Y ≤ ${D3_TIERS[_tt.gender][1]}, R after` : ''}</div>
      <div class="pcols ${_tt.view==='name'?'':'pcols2'}">${body}</div>`;
-  window.print();
 }
 
 // ── DIII RANKS (USA Swimming "NCAA Top Times Report" PDFs) ────────────────
