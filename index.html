@@ -202,6 +202,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .print-only,.code-print{display:none;}
 @media print {
   .ttpack + .ttpack{break-before:page;}
+  table.pt td.rl{white-space:normal;font-size:8px;color:#222;padding-bottom:2px;}
   @page { margin: .5in; }
   :root{--bg:#fff;--bg2:#fff;--bg3:#fff;--border:#bbb;--text:#000;--text-dim:#333;--gold:#000;--green:#000;--blue:#000;--purple:#000;}
   body{background:#fff;color:#000;font-size:10px;}
@@ -525,6 +526,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div class="fbar" id="ttKindBar">
     <div class="fpill act" data-v="ind" onclick="setTT('kind','ind',this)">Individual</div>
     <div class="fpill" data-v="split" onclick="setTT('kind','split',this)">Relay Splits</div>
+    <div class="fpill" data-v="relay" onclick="setTT('kind','relay',this)">Relays</div>
   </div>
   <div class="fbar" id="ttCodeBar">
     <span style="font-size:.7rem;color:var(--text-dim);font-family:var(--fm);align-self:center">Codes:</span>
@@ -1295,7 +1297,7 @@ function hy3Date(mmddyyyy) { return `${mmddyyyy.slice(4, 8)}-${mmddyyyy.slice(0,
 function parseHy3(text, teamRe) {
   teamRe = teamRe || /emory/i;
   const lines = text.replace(/\r/g, '').split('\n');
-  const out = { meet: '', date: '', rows: [], warnings: [], teams: [] };
+  const out = { meet: '', date: '', rows: [], warnings: [], teams: [], relays: [] };
   const people = {};               // team|swimmerId -> {name, gender, year}
   let team = null, keep = false, swimmer = null, ind = null, relay = null;
 
@@ -1313,9 +1315,13 @@ function parseHy3(text, teamRe) {
     if (!(r.res.sec > 0)) return;
     const legDist = r.dist / 4, unitsPerLeg = legDist / 25;
     let prev = 0;
+    const whole = { g: /^Men/.test(r.label) ? 'M' : 'W', event: relayEvName(r.dist, r.medley), letter: r.label.slice(-1).trim(),
+      time: hy3Fmt(r.res.sec), date: r.res.date || out.date, meet: out.meet, exh: false, legs: [] };
     for (let leg = 1; leg <= 4; leg++) {
       const p = r.legs.find(x => x.leg === leg);
       let cum = leg === 4 ? r.res.sec : (r.splits[leg * unitsPerLeg] || 0);
+      const pw = p && people[team.code + '|' + p.id];
+      if (pw) whole.legs.push({ leg, name: pw.name, time: cum > 0 && (leg === 1 || prev > 0) ? hy3Fmt(cum - prev) : '' });
       if (!p) { prev = cum; continue; }
       if (!(cum > 0) || (leg > 1 && !(prev > 0))) {
         out.warnings.push(`No split for leg ${leg} of ${r.label}`);
@@ -1328,6 +1334,7 @@ function parseHy3(text, teamRe) {
         date: r.res.date || out.date, meet: out.meet, leadoff: leg === 1 });
       prev = cum;
     }
+    if (whole.legs.length) out.relays.push(whole);
   };
   const flush = () => { pushInd(); ind = null; pushRelay(); relay = null; };
 
@@ -1435,7 +1442,7 @@ function mmName(s) {   // "Simmons Jr., Anthony A" -> "Anthony Simmons Jr."
 }
 function parseMmResultsPdf(pages, teamRe) {
   teamRe = teamRe || /^EMOR/i;
-  const out = { meet: '', date: '', rows: [], warnings: [], relaysSkipped: 0, relaysRead: 0, isMm: false, isPsych: false };
+  const out = { meet: '', date: '', rows: [], warnings: [], relaysSkipped: 0, relaysRead: 0, isMm: false, isPsych: false, relays: [] };
   let ev = null, g = null, relayEv = null, hasPrelim = false, relay = null;
   const skipWhy = {};
   const finishRelay = () => {
@@ -1449,12 +1456,15 @@ function parseMmResultsPdf(pages, teamRe) {
     if (!n || n % 4 || Math.abs(mmSec(r.cum[n - 1]) - mmSec(r.time)) > 0.005) return fail('splits don\'t add up');
     const legDist = relayEv.dist / 4;
     let prev = 0;
+    const whole = { g: r.g, event: relayEvName(relayEv.dist, relayEv.medley), letter: r.letter || '', time: r.time, date: out.date, meet: out.meet, exh: !!r.exh, src: 'mmpdf', legs: [] };
     for (let leg = 1; leg <= 4; leg++) {
       const cum = mmSec(r.cum[leg * per - 1]);
+      whole.legs.push({ leg, name: r.names[leg - 1].name, time: hy3Fmt(cum - prev) });
       out.rows.push({ kind: leg === 1 ? 'ind' : 'split', gender: r.g, event: `${legDist} ${relayEv.medley ? MEDLEY_LEGS[leg - 1] : 'FS'}`,
         time: hy3Fmt(cum - prev), name: r.names[leg - 1].name, year: r.names[leg - 1].year, date: out.date, meet: out.meet, leadoff: leg === 1, src: 'mmpdf' });
       prev = cum;
     }
+    out.relays.push(whole);
     out.relaysRead++;
   };
   pages.forEach(items => {
@@ -1504,7 +1514,8 @@ function parseMmResultsPdf(pages, teamRe) {
             if (ti < 0 || !g) return;
             const res = t.slice(ti + 1).filter(x => MM_RESULT.test(x));
             relay = { g, label: `${g === 'W' ? 'Women' : 'Men'} ${relayEv.dist || ''} ${relayEv.medley ? 'medley' : 'free'} relay ${t[ti + 1] || ''}`.replace(/\s+/g, ' '),
-              ok: t[0] !== '---' && res.length > 0, time: res.length ? res[res.length - 1].match(MM_RESULT)[1] : '', names: [], cum: [] };
+              ok: t[0] !== '---' && res.length > 0, time: res.length ? res[res.length - 1].match(MM_RESULT)[1] : '', names: [], cum: [],
+              letter: /^[A-Z]$/.test(t[ti + 1] || '') ? t[ti + 1] : '', exh: res.length ? /^x/.test(res[res.length - 1]) : false };
             return;
           }
           if (!relay) return;
@@ -1547,7 +1558,7 @@ async function handleResultsFiles(fileList) {
     .catch(e => ({ f, err: e }))));
   showParseStatus(`Reading ${files.length} file${files.length>1?'s':''}...`, 'info');
   document.getElementById('importPreview').innerHTML = '';
-  const fileInfo = [], rows = [];
+  const fileInfo = [], rows = [], relays = [];
   let finalsCuts = null;
   const unreadable = loaded.filter(x => x.err);
   for (const { f, bytes, err } of loaded) {
@@ -1573,6 +1584,7 @@ async function handleResultsFiles(fileList) {
           const ni = res.rows.filter(r => r.kind === 'ind').length;
           fileInfo.push({ name: f.name, label: `Meet results: ${res.meet} (${res.date}) · ${ni} individual + ${res.rows.length - ni} splits`, warnings: res.warnings });
           res.rows.forEach(r => rows.push({ ...r, src: 'hy3' }));
+          res.relays.forEach(r => relays.push({ ...r, src: 'hy3' }));
         }
         continue;
       }
@@ -1584,6 +1596,7 @@ async function handleResultsFiles(fileList) {
         const ni = mm.rows.filter(r => r.kind === 'ind' && !r.leadoff).length;
         fileInfo.push({ name: f.name, label: `Live results PDF: ${mm.meet} (${mm.date}) · ${ni} individual swims${mm.relaysRead ? ` + ${mm.relaysRead} relay${mm.relaysRead > 1 ? 's' : ''} (lead-offs and splits)` : ''} — replaced when you import the official .zip`, warnings: mm.warnings });
         mm.rows.forEach(r => rows.push(r));
+        mm.relays.forEach(r => relays.push(r));
         continue;
       }
       const res = tmParseLines(tmItemsToLines(pages));
@@ -1606,7 +1619,7 @@ async function handleResultsFiles(fileList) {
   }
 
   // Same day = same meet: reuse the name already in EagleRoster (Meet Manager and Team Manager name meets differently)
-  rows.forEach(r => {
+  [...rows, ...relays].forEach(r => {
     const ex = (R.meets || []).find(m => m.date === r.date);
     if (ex && ex.name !== r.meet) r.meet = ex.name;
   });
@@ -1627,7 +1640,7 @@ async function handleResultsFiles(fileList) {
     if (!people[k]) people[k] = { key: k, name: r.name, gender: r.gender, year: r.year, ...nmMatch(r.name, r.gender, swimmers, R.aliases) };
   });
 
-  _imp = { rows, meets, people, fileInfo, finalsCuts };
+  _imp = { rows, meets, people, fileInfo, finalsCuts, relays };
   showParseStatus('', '');
   renderImportPreview(fileInfo);
 }
@@ -1755,6 +1768,24 @@ function applyImport() {
     R.swims = R.swims.filter(s => !gone.has(s.id));
     removed = gone.size;
   }
+  // Whole relays
+  R.relays = R.relays || [];
+  let relaysAdded = 0;
+  if (official.length) {
+    const names = new Set(official.map(r => r.meet)), ds = official.map(r => r.date).sort();
+    R.relays = R.relays.filter(x => !(x.src === 'mmpdf' && (names.has(x.meet) || (x.date >= ds[0] && x.date <= ds[ds.length - 1]))));
+  }
+  const haveRel = new Set(R.relays.map(x => [x.g, x.event, x.date, x.time, x.letter].join('|')));
+  (_imp.relays || []).forEach(rl => {
+    const k = [rl.g, rl.event, rl.date, rl.time, rl.letter].join('|');
+    if (haveRel.has(k)) return;
+    haveRel.add(k);
+    const mkey = rl.date + '|' + rl.meet;
+    R.relays.push({ id: 'r' + Date.now().toString(36) + relaysAdded, g: rl.g, event: rl.event, letter: rl.letter, time: rl.time,
+      date: rl.date, meet: rl.meet, mkey, code: (_imp.meets[mkey] || {}).code || R.meetCodes[mkey] || 'U', src: rl.src || 'hy3', exh: !!rl.exh,
+      legs: rl.legs.map(l => ({ leg: l.leg, name: l.name, time: l.time, sid: idFor[rl.g + '|' + l.name] || null })) });
+    relaysAdded++;
+  });
   if (pdfMkeys.size) R.meets = R.meets.filter(m => !pdfMkeys.has(m.key) || R.swims.some(s => s.mkey === m.key));
 
   // Meet list + codes
@@ -1773,6 +1804,7 @@ function applyImport() {
   renderAll();
   showParseStatus(`✓ ${added} new swims imported · ${pbs} lifetime best${pbs===1?'':'s'} · ${newBests} new season bests` +
     (fc ? ` · cheer sheet A/B final cuts updated (${fc.year})` : '') +
+    (relaysAdded ? ` · ${relaysAdded} relay${relaysAdded === 1 ? '' : 's'}` : '') +
     (dupes ? ` · ${dupes} already in EagleRoster` : '') + (skipped ? ` · ${skipped} skipped` : '') +
     (replaced || removed ? ` · official results replaced ${replaced} live-PDF swim${replaced === 1 ? '' : 's'}${removed ? `, removed ${removed} the official file didn't have` : ''}` : ''), 'ok');
   showRecordApprovals();   // any new team records? ask before they count
@@ -1789,6 +1821,7 @@ function setMeetCode(i, el) {
     renderMeetHistory(); return;
   }
   swims.forEach(s => { s.code = code; });
+  (R.relays || []).filter(r => r.mkey === m.key || (r.date === m.date && r.meet === m.name)).forEach(r => { r.code = code; });
   m.code = code; R.meetCodes[m.key] = code;
   el.className = 'code-sel code-' + code;
   save();
@@ -1857,6 +1890,60 @@ function printTopTimes() {
   window.print();
 }
 
+// ── RELAYS on Top Times ───────────────────────────────────────────────────
+// R.relays: whole Emory relays from .zip/.hy3 and results-PDF imports (exhibition and DQ'd relays left out of reports).
+// Modes: "Best per athlete" = fastest relay per event, "Best per code" = fastest per code, "All swims" = every relay.
+const relayEvName = (dist, medley) => `${dist} ${medley ? 'MR' : 'FR'} Relay`;
+function ttRelayGroups() {
+  const pool = (R.relays || []).filter(r => !r.exh && r.g === _tt.gender && seasonOf(r.date) === _tt.season && _tt.codes.has(r.code));
+  const by = {};
+  pool.forEach(r => (by[r.event] = by[r.event] || []).push(r));
+  Object.keys(by).forEach(ev => {
+    let l = by[ev].sort((a, b) => timeToSec(a.time) - timeToSec(b.time));
+    if (_tt.all === 'code') { const seen = new Set(); l = l.filter(r => !seen.has(r.code) && seen.add(r.code)); }
+    else if (_tt.all !== true) l = l.slice(0, 1);
+    by[ev] = l;
+  });
+  return { by, events: EVENTS_RELAY.filter(e => by[e] && by[e].length) };
+}
+const relayLegName = l => { const s = l.sid && R.swimmers[l.sid]; return s ? `${s.first} ${s.last}` : l.name; };
+function renderTopRelays(list) {
+  const { by, events } = ttRelayGroups();
+  window._ttLast = { byEvent: {}, events: [], relays: { by, events } };
+  window._d3 = {};
+  if (!events.length) { list.innerHTML = '<div style="color:var(--text-dim);font-size:.82rem">No relays for this selection. Relays are saved when you import a meet\'s .zip/.hy3 or a results PDF that names relay swimmers — re-import earlier meets\' .zip to add theirs.</div>'; return; }
+  list.innerHTML = (_tt.view === 'name' ? '<div style="font-size:.72rem;color:var(--text-dim);margin-bottom:.5rem">Relays are listed by event.</div>' : '') + events.map(ev => {
+    const rows = by[ev];
+    return `<div class="card"><div class="ct">${esc(ev)}</div><table class="tbl"><tbody>${rows.map((r, i) => {
+      const rank = rows.findIndex(x => x.time === r.time) + 1, tied = rows.filter(x => x.time === r.time).length > 1;
+      return `<tr>
+        <td class="tt-rank">${rank}${tied ? '*' : ''}</td>
+        <td><div style="font-weight:600;font-size:.8rem">${esc(r.time)} <span class="badge bbk" style="margin-left:.25rem">${esc(r.letter || '')}</span> <span class="code-pill code-${r.code}" style="font-family:var(--fm);font-size:.65rem;margin-left:.25rem">${r.code}</span></div>
+            <div class="tt-meet">${esc(r.meet)} · ${r.date}</div>
+            <div style="font-size:.75rem;margin-top:.2rem">${r.legs.map(l => `${l.leg}. ${esc(relayLegName(l))}${l.time ? ` <span class="ttime" style="color:var(--text-dim)">${esc(l.time)}</span>` : ''}${l.leg === 1 ? '<span class="badge lo">LO</span>' : ''}`).join(' &nbsp;·&nbsp; ')}</div></td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+  }).join('');
+}
+function ttRelayPrintHtml() {
+  const { by, events } = (window._ttLast || {}).relays || { by: {}, events: [] };
+  if (!events.length) return '';
+  const md = d => `${+d.slice(5,7)}/${+d.slice(8,10)}`;
+  const codeTxt = (ttCodesFiltered() ? 'Codes: ' + [..._tt.codes].join(' + ') : 'All codes') + (_tt.all === true ? ' · all relays' : _tt.all === 'code' ? ' · fastest per code' : ' · fastest relay');
+  const body = events.map(ev => {
+    const rows = by[ev];
+    return `<table class="pt"><tr><th colspan="4">${esc(ev)}</th></tr>` + rows.map(r => {
+      const rank = rows.findIndex(x => x.time === r.time) + 1, tie = rows.filter(x => x.time === r.time).length > 1;
+      return `<tr><td class="r">${rank}${tie ? '*' : ''}</td><td class="r"><b>${esc(r.time)}</b> ${esc(r.letter || '')}</td><td>${r.code}</td><td class="mt">${esc(r.meet)} <span class="pc">${md(r.date)}</span></td></tr>` +
+        `<tr><td></td><td colspan="3" class="rl">${r.legs.map(l => `${esc(relayLegName(l))}${l.time ? ' <span class="pc">' + esc(l.time) + '</span>' : ''}`).join(' · ')}</td></tr>`;
+    }).join('') + '</table>';
+  }).join('');
+  return `<div class="ph"><b>Emory Swimming &amp; Diving — ${_tt.gender === 'W' ? 'Women' : 'Men'}'s Relay Top Times</b>
+       &nbsp;${_tt.season} · ${codeTxt} · printed ${new Date().toLocaleDateString()}</div>
+     <div class="pm">U = unrested · UwS = unrested, suited · S = shaved · swimmers in order with their splits (first = lead-off) · exhibition relays not included · * = tie</div>
+     <div class="pcols pcols2">${body}</div>`;
+}
+
 // After a meet: by name (all swims), by event (best per code), relay splits (best per code) — women then men,
 // all rest codes, the selected season. One print job, each report on its own page; the screen view is restored.
 const TT_PACK = [['W','ind','name',true], ['W','ind','event','code'], ['W','split','event','code'],
@@ -1876,6 +1963,7 @@ function printTopTimesPack() {
 
 // Print-ready HTML for the current Top Times selection ('' when there's nothing to show)
 function ttPrintHtml() {
+  if (_tt.kind === 'relay') return ttRelayPrintHtml();
   const { byEvent, events } = window._ttLast || { byEvent: {}, events: [] };
   if (!events.length) return '';
   const md = d => `${+d.slice(5,7)}/${+d.slice(8,10)}`;
@@ -2084,6 +2172,7 @@ function renderTopTimes() {
   sel.innerHTML = seasons.map(s => `<option ${s===_tt.season?'selected':''}>${s}</option>`).join('');
   _tt.season = sel.value;
   renderD3Status();
+  if (_tt.kind === 'relay') { renderTopRelays(list); return; }
 
   const pool = R.swims.filter(s => s.kind === _tt.kind && seasonOf(s.date) === _tt.season &&
     _tt.codes.has(s.code) &&
