@@ -1445,6 +1445,10 @@ function parseMmResultsPdf(pages, teamRe) {
   const out = { meet: '', date: '', rows: [], warnings: [], relaysSkipped: 0, relaysRead: 0, isMm: false, isPsych: false, relays: [] };
   let ev = null, g = null, relayEv = null, hasPrelim = false, relay = null;
   const skipWhy = {};
+  // Two-column PDFs: the right column starts at its event headings. Worked out once for the whole PDF —
+  // a page can have headings in only one column.
+  const headX = [...new Set(pages.flatMap(p => p.filter(i => /^\(?Event\s+\d+/.test((i.str || '').trim())).map(i => Math.round(i.x))))].sort((a, b) => a - b);
+  const docCut = headX.length && headX[headX.length - 1] - headX[0] > 150 ? headX[headX.length - 1] - 6 : Infinity;
   const finishRelay = () => {
     const r = relay; relay = null;
     if (!r) return;
@@ -1452,8 +1456,18 @@ function parseMmResultsPdf(pages, teamRe) {
     if (!r.ok) return;                                             // DQ / not a time
     if (!relayEv || !relayEv.dist) return fail('unknown relay event');
     if (r.names.filter(Boolean).length !== 4) return fail('no swimmer names in the PDF');
-    const n = r.cum.length, per = n / 4;
-    if (!n || n % 4 || Math.abs(mmSec(r.cum[n - 1]) - mmSec(r.time)) > 0.005) return fail('splits don\'t add up');
+    // Splits are either running totals (last = final time) or per-leg/per-50 pieces that add up to it
+    let n = r.cum.length;
+    if (n && Math.abs(mmSec(r.cum[n - 1]) - mmSec(r.time)) > 0.005) {
+      let run = 0; const sums = r.cum.map(x => (run += mmSec(x)));
+      if (Math.abs(run - mmSec(r.time)) < 0.015) r.cum = sums.map(s => hy3Fmt(s));
+      else if (n % 4 === 0 && n > 4) {   // pairs per leg (first 50, then the whole leg): the last of each group is the leg time
+        const per0 = n / 4, legs = [0, 1, 2, 3].map(k => mmSec(r.cum[k * per0 + per0 - 1]));
+        if (Math.abs(legs.reduce((a, b) => a + b, 0) - mmSec(r.time)) < 0.015) { let c = 0; r.cum = legs.map(x => hy3Fmt(c += x)); }
+      }
+    }
+    n = r.cum.length; const per = n / 4;
+    if (!n || n % 4 || Math.abs(mmSec(r.cum[n - 1]) - mmSec(r.time)) > 0.015) return fail('splits don\'t add up');
     const legDist = relayEv.dist / 4;
     let prev = 0;
     const whole = { g: r.g, event: relayEvName(relayEv.dist, relayEv.medley), letter: r.letter || '', time: r.time, date: out.date, meet: out.meet, exh: !!r.exh, src: 'mmpdf', legs: [] };
@@ -1483,10 +1497,7 @@ function parseMmResultsPdf(pages, teamRe) {
     }
     const topY = resIt ? resIt.y - 2 : title ? title.y - 2 : Infinity;
     const body = items.filter(i => i.y < topY);
-    // Columns: the right column starts at its event headings
-    const heads = body.filter(i => /^\(?Event\s+\d+/.test(i.str));
-    const xs = [...new Set(heads.map(i => Math.round(i.x)))].sort((a, b) => a - b);
-    const cut = xs.length && xs[xs.length - 1] - xs[0] > 150 ? xs[xs.length - 1] - 6 : Infinity;
+    const cut = docCut;
     const cols = [[], []];
     body.forEach(i => cols[i.x >= cut ? 1 : 0].push(i));
     cols.forEach(ci => {
@@ -1523,8 +1534,8 @@ function parseMmResultsPdf(pages, teamRe) {
           if (nm.length) {
             nm.forEach(x => {
               const s = x.replace(/^[1-4]\)\s*/, '').replace(/^r:\S+\s*/, '');
-              const y = s.match(/\s(FR|SO|JR|SR|GS|GR|5Y|6Y)$/);
-              relay.names[+x[0] - 1] = { name: mmName(y ? s.slice(0, y.index) : s), year: y ? y[1] : '' };
+              const y = s.match(/\s(FR|SO|JR|SR|GS|GR|5Y|6Y|\d{1,2})$/);   // class year, or age
+              relay.names[+x[0] - 1] = { name: mmName(y ? s.slice(0, y.index) : s), year: y && /\D/.test(y[1]) ? y[1] : '' };
             });
             return;
           }
