@@ -1988,7 +1988,7 @@ function ttPrintHtml() {
     .map(s => `<b>${md(s.date)}</b> ${esc(s.meet)}`).join(' &nbsp;·&nbsp; ');
   const nm = sw => `${esc(sw.first)} ${esc(sw.last)}`;
   const lo = s => (s.pb ? '<span class="pbm">PB</span>' : '') + (m => m ? `<span class="pbm stdm">${m}</span>` : '')(ncaaMark(s)) + (_vr.has(s.id) ? '<span class="pbm vrm">VR</span>' : '') +
-    (r => r ? `<span class="pbm d3m d3${d3Tier(_tt.gender, r)}">DIII #${r} ${d3Tier(_tt.gender, r).toUpperCase()}</span>` : '')((window._d3 || {})[s.id]) + (s.lo ? '<sup>LO</sup>' : '');
+    (r => r ? `<span class="pbm d3m d3${d3Tier(_tt.gender, r.rank)}">DIII ${r.est ? '~' : ''}#${r.rank} ${d3Tier(_tt.gender, r.rank).toUpperCase()}</span>` : '')((window._d3 || {})[s.id]) + (s.lo ? '<sup>LO</sup>' : '');
   const tc = s => `<td class="r${s.pb ? ' pbt' : ''}">${esc(s.time)}${lo(s)}</td>`;
   let body = '';
   if (_tt.view === 'name') {
@@ -2013,7 +2013,7 @@ function ttPrintHtml() {
   }
   return `<div class="ph"><b>Emory Swimming &amp; Diving — ${_tt.gender==='W'?'Women':'Men'}'s ${_tt.kind==='split'?'Relay Split':'Individual'} Top Times</b>
        &nbsp;${_tt.season} · ${_tt.view==='name'?'by name':'by event'} · ${codeTxt} · printed ${new Date().toLocaleDateString()}</div>
-     <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · <span class="pbm">PB</span> = lifetime best · <span class="pbm vrm">VR</span> = set a team record · <span class="pbm stdm">A</span> <span class="pbm stdm">Q</span> <span class="pbm stdm">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · LO = relay lead-off · * = tie${Object.keys(window._d3 || {}).length ? ` · DIII #n = USA Swimming DIII rank (${R.d3Ranks[_tt.gender].date}): G ≤ ${D3_TIERS[_tt.gender][0]}, Y ≤ ${D3_TIERS[_tt.gender][1]}, R after` : ''}</div>
+     <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · <span class="pbm">PB</span> = lifetime best · <span class="pbm vrm">VR</span> = set a team record · <span class="pbm stdm">A</span> <span class="pbm stdm">Q</span> <span class="pbm stdm">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · LO = relay lead-off · * = tie${Object.keys(window._d3 || {}).length ? ` · DIII #n = USA Swimming DIII rank (${R.d3Ranks[_tt.gender].date}): G ≤ ${D3_TIERS[_tt.gender][0]}, Y ≤ ${D3_TIERS[_tt.gender][1]}, R after; ~ = estimated, time newer than the report` : ''}</div>
      <div class="pcols ${_tt.view==='name'?'':'pcols2'}">${body}</div>`;
 }
 
@@ -2025,7 +2025,7 @@ const d3Tier = (g, rank) => { const [a, b] = D3_TIERS[g] || D3_TIERS.M; return r
 
 function parseUsasTopTimes(pages) {
   const STK = { FR: 'FS', BK: 'BK', BR: 'BR', FL: 'FL', IM: 'IM' };
-  const out = { rows: [], reportDate: '' };
+  const out = { rows: [], lists: {}, reportDate: '' };
   pages.forEach(items => {
     items = items.filter(i => i.str && i.str.trim());
     if (!out.reportDate) { const d = items.find(i => /^\d{1,2}\/\d{1,2}\/\d{4}\b/.test(i.str.trim())); if (d) out.reportDate = d.str.trim().split(' ')[0]; }
@@ -2047,6 +2047,7 @@ function parseUsasTopTimes(pages) {
         if (h) { ev = /-R$/.test(h[2]) ? null : `${+h[1]} ${STK[h[2]]}`; return; }   // relays skipped
         if (!ev || !/^\d+$/.test(t[0]) || !/^(?:\d+:)?\d+\.\d\d(?:[a-z]|\([a-z]\))*$/.test(t[1] || '')) return;
         const di = t.length - 1; if (!/^\d+\/\d+\/\d+$/.test(t[di])) return;
+        (out.lists[ev] = out.lists[ev] || []).push(Math.round(timeToSec(t[1].replace(/(?:[a-z]|\([a-z]\))+$/, '')) * 100) / 100);
         if (!/^emory/i.test(t[di - 2] || '')) return;
         out.rows.push({ ev, rank: +t[0], time: t[1].replace(/(?:[a-z]|\([a-z]\))+$/, ''), name: t.slice(2, di - 2).join(' ') });
       });
@@ -2080,7 +2081,7 @@ async function loadD3Ranks(fileList) {
       }
       const [mo, da, yr] = (res.reportDate || '').split('/');
       const iso = yr ? `${yr}-${mo.padStart(2, '0')}-${da.padStart(2, '0')}` : new Date().toISOString().slice(0, 10);
-      R.d3Ranks[g] = { file: f.name, date: iso, season: seasonOf(iso), rows: res.rows };
+      R.d3Ranks[g] = { file: f.name, date: iso, season: seasonOf(iso), rows: res.rows, lists: res.lists };
       msgs.push(`<div class="st stok">✓ ${esc(f.name)} → ${g === 'W' ? 'Women' : 'Men'} · ${res.rows.length} Emory ranks · report ${res.reportDate || iso}</div>`);
     } catch (e) {
       msgs.push(`<div class="st sterr">${esc(f.name)}: ${esc(e.message)}</div>`);
@@ -2091,12 +2092,41 @@ async function loadD3Ranks(fileList) {
   st.insertAdjacentHTML('afterbegin', msgs.join(''));
 }
 
-// Ranks for one gender/season: sid|event → rank
-function d3RankMap(g, season) {
-  const d = (R.d3Ranks || {})[g], m = {};
-  if (!d || d.season !== season) return m;
-  d.rows.forEach(r => { const sid = d3Sid(r.name, g); if (sid) m[sid + '|' + r.ev] = r.rank; });
-  return m;
+// Rank for a swim's own time: (sid, event, time) → {rank, est} or null.
+// Compared with everyone on the report's list, with Emory swimmers counted at their best known time this
+// season (the report's, or a faster one imported since). est = true when that differs from the report's rank.
+function d3Ranker(g, season) {
+  const d = (R.d3Ranks || {})[g];
+  if (!d || d.season !== season) return () => null;
+  const own = {};
+  d.rows.forEach(r => { const sid = d3Sid(r.name, g); if (sid) own[sid + '|' + r.ev] = { rank: r.rank, sec: timeToSec(r.time) }; });
+  const fields = {};   // event → [{sid, sec}] : everyone else on the list + Emory at their best known time
+  const field = ev => {
+    if (fields[ev]) return fields[ev];
+    const list = (d.lists || {})[ev];
+    if (!list) return (fields[ev] = null);
+    const rest = list.slice(), best = {};
+    Object.keys(own).filter(k => k.endsWith('|' + ev)).forEach(k => {
+      const sid = k.slice(0, -ev.length - 1), sec = own[k].sec;
+      const i = rest.findIndex(x => Math.abs(x - sec) < 0.005); if (i >= 0) rest.splice(i, 1);
+      best[sid] = sec;
+    });
+    (R.swims || []).forEach(s => {
+      if (s.kind !== 'ind' || s.event !== ev || seasonOf(s.date) !== season) return;
+      const sw = R.swimmers[s.sid]; if (!sw || sw.gender !== g) return;
+      const sec = timeToSec(s.time); if (!(best[s.sid] <= sec)) best[s.sid] = sec;
+    });
+    return (fields[ev] = rest.map(sec => ({ sid: null, sec })).concat(Object.keys(best).map(sid => ({ sid, sec: best[sid] }))));
+  };
+  return (sid, ev, time) => {
+    const t = timeToSec(time), o = own[sid + '|' + ev], f = field(ev);
+    if (!f) return o && Math.abs(o.sec - t) < 0.005 ? { rank: o.rank, est: false } : null;   // upload from before full lists were kept
+    const others = f.filter(x => x.sid !== sid);
+    const listed = (d.lists[ev] || []).length;
+    if (listed >= 190 && t > d.lists[ev][listed - 1] + 0.001) return null;            // slower than everyone listed
+    const rank = others.filter(x => x.sec < t - 0.001).length + 1;
+    return { rank, est: !(o && Math.abs(o.sec - t) < 0.005 && rank === o.rank) };
+  };
 }
 
 function renderD3Status() {
@@ -2109,6 +2139,7 @@ function renderD3Status() {
   const [y, m, dd] = d.date.split('-');
   st.innerHTML = `${gl} DIII ranks: report ${+m}/${+dd}/${y} (${d.season}) · ${d.rows.length} Emory ranks` +
     (d.season !== _tt.season ? ` <span style="color:var(--gold)">— not shown: this view is ${_tt.season}</span>` : '') +
+    (!d.lists ? ` <span style="color:var(--gold)">— re-upload this report so newer swims get a rank</span>` : '') +
     (miss.length ? `<div style="margin-top:.35rem;color:var(--gold)">${miss.length} name${miss.length > 1 ? 's' : ''} not matched to the roster:</div>` +
       miss.map((n, i) => `<div class="imp-row"><span>${esc(n)}</span><select onchange="matchD3(${i}, this.value)"><option value="">— skip —</option>${
         roster.map(s => `<option value="${esc(s.id)}">${esc(s.first)} ${esc(s.last)}</option>`).join('')}</select></div>`).join('') : '');
@@ -2125,15 +2156,15 @@ function matchD3(i, sid) {
 function d3ForView(byEvent, events) {
   const out = {};
   if (_tt.kind !== 'ind') return out;
-  const ranks = d3RankMap(_tt.gender, _tt.season);
+  const rankOf = d3Ranker(_tt.gender, _tt.season);
   events.forEach(ev => {
     const fastest = {};
     Object.values(byEvent[ev]).sort(ttSort(ev)).forEach(s => { if (!fastest[s.sid]) fastest[s.sid] = s; });
-    Object.values(fastest).forEach(s => { const r = ranks[s.sid + '|' + ev]; if (r) out[s.id] = r; });
+    Object.values(fastest).forEach(s => { const r = rankOf(s.sid, ev, s.time); if (r) out[s.id] = r; });
   });
   return out;
 }
-const d3Badge = s => { const r = (window._d3 || {})[s.id]; return r ? `<span class="badge d3 d3${d3Tier(_tt.gender, r)}">DIII #${r}</span>` : ''; };
+const d3Badge = s => { const r = (window._d3 || {})[s.id]; return r ? `<span class="badge d3 d3${d3Tier(_tt.gender, r.rank)}"${r.est ? ' title="Estimated: this time is newer than the USA Swimming report"' : ''}>DIII ${r.est ? '~' : ''}#${r.rank}</span>` : ''; };
 
 const ttCodeSel = s => `<span class="code-print">${s.code}</span><select class="code-sel no-print code-${s.code}" onchange="setSwimCode('${s.id}',this.value,this)">${
   REST_CODES.map(c=>`<option ${c===s.code?'selected':''}>${c}</option>`).join('')}</select>`;
