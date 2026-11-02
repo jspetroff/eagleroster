@@ -186,7 +186,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .tbl.d3list tr.d3row-g td{background:rgba(76,175,125,.22);}
 .tbl.d3list tr.d3row-y td{background:rgba(232,197,71,.24);}
 .tbl.d3list tr.d3row-r td{background:rgba(224,92,92,.20);}
-#d3ListView{display:block;} @media print{#d3ListView{display:none!important;}}
+@media print{.d3print table.d3list{font-size:9px;} .d3print table.d3list td{padding:1px 4px;white-space:nowrap;} .d3print tr td{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
 .badge.std{margin-left:.35rem;border:1px solid currentColor;}
 .badge.stdA{background:#e05c5c;color:#fff;border-color:#e05c5c;}
 .badge.stdQ{color:var(--green);background:rgba(76,175,125,.12);}
@@ -513,7 +513,6 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   </div>
   <div id="stdNote" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)"></div>
   <div id="stdList"></div>
-  <div id="d3ListView" style="margin-top:1rem"></div>
   <div id="stdPrint" class="print-only"></div>
 </div>
 
@@ -542,6 +541,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div class="fpill act" data-v="ind" onclick="setTT('kind','ind',this)">Individual</div>
     <div class="fpill" data-v="split" onclick="setTT('kind','split',this)">Relay Splits</div>
     <div class="fpill" data-v="relay" onclick="setTT('kind','relay',this)">Relays</div>
+    <div class="fpill" data-v="d3list" onclick="setTT('kind','d3list',this)">NCAA DIII</div>
   </div>
   <div class="fbar" id="ttCodeBar">
     <span style="font-size:.7rem;color:var(--text-dim);font-family:var(--fm);align-self:center">Codes:</span>
@@ -879,7 +879,7 @@ function switchTab(id, el) {
   if (id==='reports') renderReportEvents();
   if (id==='toptimes') renderTopTimes();
   if (id==='records') renderRecords();
-  if (id==='standards') { renderStandards(); renderD3List(); }
+  if (id==='standards') renderStandards();
   if (id==='tags') renderTags();
   if (id==='lessons') renderLessons();
 }
@@ -2027,6 +2027,14 @@ function printTopTimesPack() {
 // Print-ready HTML for the current Top Times selection ('' when there's nothing to show)
 function ttPrintHtml() {
   if (_tt.kind === 'relay') return ttRelayPrintHtml();
+  if (_tt.kind === 'd3list') {
+    const t = document.querySelector('#ttList table.d3list'), L = window._d3Lists[_tt.gender];
+    if (!t || !L) return '';
+    return `<div class="ph"><b>NCAA DIII Top Times — ${_tt.gender === 'W' ? 'Women' : 'Men'}'s ${esc(_d3l.ev)}${_d3l.team ? ' · ' + esc(_d3l.team) : ''}</b>
+      &nbsp;USA Swimming report ${L.date} · printed ${new Date().toLocaleDateString()}</div>
+      <div class="pm">Emory rows: green ≤ ${D3_TIERS[_tt.gender][0]}, yellow ≤ ${D3_TIERS[_tt.gender][1]}, red after · italic ~rank = Emory swim newer than the report</div>
+      <div class="d3print">${t.outerHTML}</div>`;
+  }
   const { byEvent, events } = window._ttLast || { byEvent: {}, events: [] };
   if (!events.length) return '';
   const md = d => `${+d.slice(5,7)}/${+d.slice(8,10)}`;
@@ -2270,6 +2278,7 @@ function renderTopTimes() {
   _tt.season = sel.value;
   renderD3Status();
   if (_tt.kind === 'relay') { renderTopRelays(list); return; }
+  if (_tt.kind === 'd3list') { window._ttLast = { byEvent: {}, events: [] }; window._d3 = {}; renderD3List(); return; }
 
   const pool = R.swims.filter(s => s.kind === _tt.kind && seasonOf(s.date) === _tt.season &&
     _tt.codes.has(s.code) &&
@@ -2992,7 +3001,7 @@ function renderRecords() {
 let _stdG = 'W';
 const STD_EVENTS = ['50 FS','100 FS','200 FS','500 FS','1000 FS','1650 FS','50 BK','100 BK','200 BK','50 BR','100 BR','200 BR','50 FL','100 FL','200 FL','100 IM','200 IM','400 IM'];
 const STD_RELAYS = ['200 Free Relay','400 Free Relay','800 Free Relay','200 Medley Relay','400 Medley Relay'];
-function setStdG(g, el) { _stdG = g; el.parentNode.querySelectorAll('.fpill').forEach(p => p.classList.remove('act')); el.classList.add('act'); renderStandards(); renderD3List(); }
+function setStdG(g, el) { _stdG = g; el.parentNode.querySelectorAll('.fpill').forEach(p => p.classList.remove('act')); el.classList.add('act'); renderStandards(); }
 
 function stdData(g) {
   ensureState();
@@ -3065,8 +3074,9 @@ async function d3LoadList(g) {
 }
 
 function renderD3List() {
-  const box = document.getElementById('d3ListView'); if (!box) return;
-  const g = _stdG, L = window._d3Lists[g];
+  if (_tt.kind !== 'd3list') return;
+  const box = document.getElementById('ttList'); if (!box) return;
+  const g = _tt.gender, L = window._d3Lists[g];
   const head = `<div class="ct">DIII Top Times — ${g === 'W' ? 'Women' : 'Men'}</div>`;
   if (L === undefined) { box.innerHTML = `<div class="card">${head}<div style="color:var(--text-dim);font-size:.82rem">Loading…</div></div>`; d3LoadList(g); return; }
   if (!L || !L.events) {
