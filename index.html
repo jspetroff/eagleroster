@@ -3415,7 +3415,20 @@ function luToggleOut(sid) { const L = luCur(); if (!L) return; L.out = L.out || 
 function luType(el, key, ri, leg) {   // typed name → fill
   const sid = luFind(el.value, _lu.g);
   if (!sid) { el.style.borderColor = 'var(--red)'; el.title = 'No single swimmer matches — keep typing'; return; }
+  _lu.focus = luNextSpot(key, ri, leg);
   if (ri == null) luAdd(key, sid); else luRelayLeg(key, ri, leg, sid);
+}
+// after a typed name, keep the cursor moving: same event's box for individuals, next leg (then next relay) for relays
+function luNextSpot(key, ri, leg) {
+  if (ri == null) return key + '|in';
+  if (leg < 3) return `${key}|${ri}|${leg + 1}`;
+  const L = luCur(), n = L ? (luSide(L, _lu.g).relays[key] || []).length : 0;
+  return ri + 1 < n ? `${key}|${ri + 1}|0` : key + '|add';
+}
+function luRestoreFocus() {
+  const f = _lu.focus; _lu.focus = null; if (!f) return;
+  const el = [...document.querySelectorAll('#luBody [data-lf]')].find(e => e.dataset.lf === f);
+  if (el) el.focus({ preventScroll: true });
 }
 // tap/click: pick a swimmer in the pool, then click an event's "+" to place them
 function luPick(sid) { _lu.sel = _lu.sel === sid ? null : sid; renderLineup(); }
@@ -3478,7 +3491,7 @@ function renderLineup() {
           <span class="ttime" style="color:var(--text-dim)">${seed ? esc(seed.time) + (seed.sb ? '' : '*') : '—'}</span>
           <button class="btn bsm" onclick="luRemove('${key}','${sid}')" title="Remove">&#x2715;</button></div>`;
       }).join('') +
-        `<div style="display:flex;gap:.4rem;margin-top:.35rem"><input list="luNames" placeholder="Type a name…" style="flex:1" onchange="luType(this,'${key}')">${placeBtn(key)}${side.manual[key] ? `<button class="btn bsm" onclick="luAutoOrder('${key}')" title="Back to fastest-first">Sort by time</button>` : ''}</div>`;
+        `<div style="display:flex;gap:.4rem;margin-top:.35rem"><input list="luNames" data-lf="${key}|in" placeholder="Type a name…" onkeydown="if((event.key==='Tab'&&!event.shiftKey||event.key==='Enter')&&this.value.trim()){event.preventDefault();this.onchange()}" style="flex:1" onchange="luType(this,'${key}')">${placeBtn(key)}${side.manual[key] ? `<button class="btn bsm" onclick="luAutoOrder('${key}')" title="Back to fastest-first">Sort by time</button>` : ''}</div>`;
     } else if (k === 'relay') {
       const rel = side.relays[key] || [];
       body = rel.map((legs, ri) => {
@@ -3491,13 +3504,13 @@ function renderLineup() {
             <button class="btn bsm" onclick="luRelayMove('${key}',${ri},-1)">&#8593;</button><button class="btn bsm" onclick="luRelayMove('${key}',${ri},1)">&#8595;</button>
             <button class="btn bsm" onclick="luRelayDel('${key}',${ri})">&#x2715;</button></div>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.3rem;margin-top:.3rem">${legs.map((sid, leg) =>
-            `<input list="luNames" ${dropAttrs(key, ri, leg)} value="${sid ? esc(luName(sid)) : ''}" placeholder="${key === 'MR' ? ['Back', 'Breast', 'Fly', 'Free'][leg] : 'Leg ' + (leg + 1)}"
-               onchange="if(!this.value.trim()){luRelayLeg('${key}',${ri},${leg},null)}else{luType(this,'${key}',${ri},${leg})}" ${sid && counts[sid] && counts[sid].over ? 'style="color:var(--red);font-weight:700"' : ''}>`).join('')}</div></div>`;
-      }).join('') + `<button class="btn bsm" style="margin-top:.4rem" onclick="luAddRelay('${key}')">+ Add relay</button>`;
+            `<input list="luNames" data-lf="${key}|${ri}|${leg}" onkeydown="if((event.key==='Tab'&&!event.shiftKey||event.key==='Enter')&&this.value.trim()){event.preventDefault();this.onchange()}" ${dropAttrs(key, ri, leg)} value="${sid ? esc(luName(sid)) : ''}" placeholder="${key === 'MR' ? ['Back', 'Breast', 'Fly', 'Free'][leg] : 'Leg ' + (leg + 1)}"
+               onchange="if(!this.value.trim()){_lu.focus=luNextSpot('${key}',${ri},${leg});luRelayLeg('${key}',${ri},${leg},null)}else{luType(this,'${key}',${ri},${leg})}" ${sid && counts[sid] && counts[sid].over ? 'style="color:var(--red);font-weight:700"' : ''}>`).join('')}</div></div>`;
+      }).join('') + `<button class="btn bsm" data-lf="${key}|add" style="margin-top:.4rem" onclick="luAddRelay('${key}')">+ Add relay</button>`;
     } else {
       const dv = side.divers[key] || [];
       body = dv.map(sid => `<div class="imp-row"><span style="flex:1">${esc(luName(sid))}</span><button class="btn bsm" onclick="luRemove('${key}','${sid}')">&#x2715;</button></div>`).join('') +
-        `<div style="display:flex;gap:.4rem;margin-top:.35rem"><input list="luNames" placeholder="Type a diver…" style="flex:1" onchange="luType(this,'${key}')">${placeBtn(key)}</div>`;
+        `<div style="display:flex;gap:.4rem;margin-top:.35rem"><input list="luNames" data-lf="${key}|in" placeholder="Type a diver…" onkeydown="if((event.key==='Tab'&&!event.shiftKey||event.key==='Enter')&&this.value.trim()){event.preventDefault();this.onchange()}" style="flex:1" onchange="luType(this,'${key}')">${placeBtn(key)}</div>`;
     }
     return `<div class="card" style="margin-bottom:.6rem" ${k !== 'relay' ? dropAttrs(key) : ''}><div class="ct">${esc(label)}${oppLine(key)}</div>${body}</div>`;
   }).join('');
@@ -3523,6 +3536,7 @@ function renderLineup() {
         ${unplaced.length ? `<div style="font-size:.72rem;color:var(--gold);margin-bottom:.5rem">Not in any event yet: ${unplaced.length}</div>` : ''}
         <div style="font-size:.68rem;color:var(--text-dim);margin-bottom:.35rem">Drag a name onto an event, or click it and then the event's + button. "out" marks someone unavailable.</div>
         <div style="max-height:75vh;overflow-y:auto">${summary}</div></div></div>`;
+  luRestoreFocus();
 }
 
 function printLineup() {
