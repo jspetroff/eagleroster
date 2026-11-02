@@ -1946,7 +1946,7 @@ function printTopTimes() {
   const html = ttPrintHtml();
   if (!html) { alert('Nothing to print for this selection.'); return; }
   document.getElementById('ttPrint').innerHTML = html;
-  window.print();
+  appPrint('ttPrint', 'Top Times');
 }
 
 // ── RELAYS on Top Times ───────────────────────────────────────────────────
@@ -2017,7 +2017,7 @@ function printTopTimesPack() {
   Object.assign(_tt, keep);
   renderTopTimes();
   document.getElementById('ttPrint').innerHTML = parts.map(p => `<div class="ttpack">${p}</div>`).join('');
-  window.print();
+  appPrint('ttPrint', 'Post-meet reports');
 }
 
 // Print-ready HTML for the current Top Times selection ('' when there's nothing to show)
@@ -3049,7 +3049,7 @@ function printStandards() {
      <table class="pt st"><tr><th>Relay</th><th colspan="2">NCAA DIII record</th><th colspan="2">Emory record</th></tr>${
       d.relay.map(r => `<tr><td><b>${esc(r.ev)}</b></td>${rc(r.n)}${re(r.e)}</tr>`).join('')}</table>
      ${d.dive.length ? `<table class="pt st"><tr><th>Diving</th><th colspan="2">Emory record</th></tr>${d.dive.map(r => `<tr><td><b>${esc(recLabel(r))}</b></td>${re(r)}</tr>`).join('')}</table>` : ''}`;
-  window.print();
+  appPrint('stdPrint', 'Standards');
 }
 
 // ── DIII lists (full USA Swimming top-times lists, on the Standards tab) ─────
@@ -3585,7 +3585,101 @@ function printLineup() {
       <div style="display:grid;grid-template-columns:3fr 2fr;gap:14px;align-items:start"><div>${ev}</div><div><div class="lue-h">${g === 'W' ? 'Women' : 'Men'} — entries</div>${list}</div></div></div>`;
   };
   document.getElementById('luPrint').innerHTML = half('W') + half('M');
-  window.print();
+  appPrint('luPrint', `Lineup ${L.opp || ''} ${L.date || ''}`);
+}
+
+// ── PRINTING from the iPhone home-screen app ─────────────────────────────
+// Home-screen web apps on iPhone ignore window.print(), so there the printout is drawn into a PDF instead
+// and handed to the share sheet (Print, Save to Files, AirDrop…). Everywhere else Print works as before.
+const isHomeScreenApp = () => window._forcePdf || window.navigator.standalone === true || !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+function appPrint(id, name) {
+  if (!isHomeScreenApp()) { window.print(); return; }
+  appPdf(id, name).finally(() => document.body.classList.remove('ptags'));
+}
+function loadScriptOnce(src, test) {
+  if (test()) return Promise.resolve();
+  return new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('Could not load ' + src.split('/').pop())); document.head.appendChild(s); });
+}
+function pdfSheet(html) {
+  let el = document.getElementById('pdfSheet');
+  if (!el) { el = document.createElement('div'); el.id = 'pdfSheet'; el.className = 'no-print';
+    el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:1rem';
+    document.body.appendChild(el); }
+  el.innerHTML = `<div class="card" style="max-width:340px;width:100%;text-align:center">${html}</div>`;
+  return el;
+}
+const closePdfSheet = () => { const el = document.getElementById('pdfSheet'); if (el) el.remove(); };
+// A report with newspaper columns (.pcols) is laid out a page at a time, filling column 1, then 2, then 3, like the
+// printer does; otherwise one tall set of columns would be cut across pages and read out of order.
+function pdfPages(d, pack, W, H) {
+  const cols = pack.querySelector('.pcols'); if (!cols) return [pack];
+  const cs = d.defaultView.getComputedStyle(cols), n = parseInt(cs.columnCount) || 1, gap = parseFloat(cs.columnGap) || 10;
+  const cw = (W - gap * (n - 1)) / n, items = [...cols.children];
+  const headH = cols.getBoundingClientRect().top - pack.getBoundingClientRect().top;
+  cols.style.columnCount = 1; cols.style.width = cw + 'px';
+  const hs = items.map(el => { const m = d.defaultView.getComputedStyle(el); return el.getBoundingClientRect().height + (parseFloat(m.marginTop) || 0) + (parseFloat(m.marginBottom) || 0); });
+  const pages = []; let page = null, col = 0, used = 0, cap = H - headH - 4;
+  const newPage = () => { page = d.createElement('div'); page.style.cssText = `display:flex;gap:${gap}px;align-items:flex-start`;
+    for (let i = 0; i < n; i++) { const c = d.createElement('div'); c.className = cols.className; c.style.cssText = `column-count:1;width:${cw}px;flex:none`; page.appendChild(c); }
+    pages.push(page); col = 0; used = 0; };
+  newPage();
+  items.forEach((el, i) => {
+    if (used > 0 && used + hs[i] > cap) { col++; used = 0; if (col >= n) { newPage(); cap = H - 4; } }
+    page.children[col].appendChild(el); used += hs[i];
+  });
+  cols.replaceWith(pages[0]);
+  return [pack].concat(pages.slice(1).map(pg => { pack.parentNode.insertBefore(pg, pack.nextSibling); return pg; })).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+}
+async function appPdf(id, name) {
+  pdfSheet('<div style="font-size:.9rem">Making the PDF…</div>');
+  let fr;
+  try {
+    await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', () => window.html2canvas);
+    await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', () => window.jspdf);
+    // the printout, laid out with the print styles, in a hidden page the width of a letter page inside .5in margins
+    const W = 720, H = 960;
+    const css = [...document.querySelectorAll('style')].map(s => s.textContent).join('\n').replace(/@media\s+print\s*\{/g, '@media all {');
+    const links = [...document.querySelectorAll('link[rel="stylesheet"]')].map(l => l.outerHTML).join('');
+    fr = document.createElement('iframe');
+    fr.style.cssText = `position:fixed;left:-${W * 3}px;top:0;width:${W}px;height:${H}px;border:0`;
+    document.body.appendChild(fr);
+    const d = fr.contentDocument;
+    d.open(); d.write(`<!doctype html><html><head><meta charset="utf-8">${links}<style>${css}</style><style>html,body{margin:0;width:${W}px;background:#fff}</style></head><body class="${document.body.className}">${document.getElementById(id).outerHTML}</body></html>`); d.close();
+    if (d.fonts && d.fonts.ready) await Promise.race([d.fonts.ready, new Promise(r => setTimeout(r, 1500))]);
+    await new Promise(r => setTimeout(r, 100));
+    const root = d.getElementById(id);
+    const packs = [...root.querySelectorAll('.ttpack')];
+    const blocks = (packs.length ? packs : [root]).flatMap(b => pdfPages(d, b, W, H));
+    const pdf = new window.jspdf.jsPDF({ unit: 'in', format: 'letter', orientation: 'portrait' });
+    let first = true;
+    for (const b of blocks) {
+      const top = b.getBoundingClientRect().top, h = Math.ceil(b.scrollHeight || b.getBoundingClientRect().height);
+      // page breaks only between rows/lines, never through one
+      const cuts = [...new Set([...b.querySelectorAll('tr,.lue,.lue-r,.rtag,.ph,.pm,table,.card')].map(e => Math.round(e.getBoundingClientRect().bottom - top)))].sort((x, y) => x - y);
+      const scale = 2, canvas = await window.html2canvas(b, { scale, backgroundColor: '#ffffff', windowWidth: W, logging: false });
+      let y0 = 0;
+      while (y0 < h - 2) {
+        let y1 = Math.min(h, y0 + H);
+        if (y1 < h) { const c = cuts.filter(c => c > y0 + 40 && c <= y1).pop(); if (c) y1 = c; }
+        const slice = document.createElement('canvas');
+        slice.width = canvas.width; slice.height = Math.ceil((y1 - y0) * scale);
+        slice.getContext('2d').drawImage(canvas, 0, Math.floor(y0 * scale), canvas.width, slice.height, 0, 0, canvas.width, slice.height);
+        if (!first) pdf.addPage(); first = false;
+        pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', 0.5, 0.5, 7.5, 7.5 * slice.height / slice.width);
+        y0 = y1;
+      }
+    }
+    const file = new File([pdf.output('blob')], (name || 'EagleRoster').replace(/[^\w .-]+/g, '') + '.pdf', { type: 'application/pdf' });
+    const url = URL.createObjectURL(file);
+    window._pdfFile = file;
+    const canShare = navigator.canShare && navigator.canShare({ files: [file] });
+    pdfSheet(`<div style="font-size:.9rem;margin-bottom:.8rem">PDF ready — ${esc(file.name)}</div>
+      ${canShare ? '<button class="btn bprimary" style="width:100%;margin-bottom:.5rem" onclick="navigator.share({files:[window._pdfFile]}).then(closePdfSheet).catch(()=>{})">Share / Print</button>' : ''}
+      <a class="btn" style="display:block;margin-bottom:.5rem" href="${url}" download="${esc(file.name)}" target="_blank">Open PDF</a>
+      <button class="btn bsm" onclick="closePdfSheet()">Close</button>`);
+  } catch (e) {
+    pdfSheet(`<div class="st sterr" style="margin-bottom:.6rem">Couldn't make the PDF: ${esc(e.message || String(e))}</div><button class="btn bsm" onclick="closePdfSheet()">Close</button>`);
+  } finally { if (fr) fr.remove(); }
 }
 
 let _vr = new Set();
@@ -4050,7 +4144,7 @@ function buildTagPrint() {
 function printTags() {
   if (!buildTagPrint()) { tagMsg('Select at least one tag to print.', 'sterr'); return; }
   document.body.classList.add('ptags');
-  window.print();
+  appPrint('tagPrint', 'Tags');
 }
 window.addEventListener('afterprint', () => document.body.classList.remove('ptags'));
 
