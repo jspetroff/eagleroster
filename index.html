@@ -795,26 +795,56 @@ function setSync(state, msg) {
 
 // ── FIREBASE ───────────────────────────────────────────────────────────────
 function rosterDoc() { return window._fsDoc(window._db, 'roster', 'main'); }
+// Firestore caps each document at 1 MB, so the roster is saved in pieces: roster/main holds the first piece
+// plus {parts, v}; roster/main_1, main_2… hold the rest. 300,000 characters per piece stays under 1 MB even
+// if every character took 3 bytes. A main document without `parts` (the old format) is read as one piece.
+const ROSTER_CHUNK = 300000;
+const rosterPart = i => window._fsDoc(window._db, 'roster', i ? 'main_' + i : 'main');
+let _saveBusy = false, _saveAgain = false;
 
 async function cloudSave() {
   if (!window._fbReady) return;
+  if (_saveBusy) { _saveAgain = true; return; }        // saves run one at a time; the latest state wins
+  _saveBusy = true;
   try {
-    await window._fsSet(rosterDoc(), { data: JSON.stringify(R) });
+    do {
+      _saveAgain = false;
+      const s = JSON.stringify(R), pieces = [];
+      for (let i = 0; i < s.length; i += ROSTER_CHUNK) pieces.push(s.slice(i, i + ROSTER_CHUNK));
+      const v = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      for (let i = 1; i < pieces.length; i++) await window._fsSet(rosterPart(i), { data: pieces[i], v });
+      await window._fsSet(rosterPart(0), { data: pieces[0] || '', parts: pieces.length, v });   // main last
+    } while (_saveAgain);
     setSync('ok', 'Synced');
-  } catch(e) { setSync('err', 'Sync error'); }
+  } catch(e) { setSync('err', 'Sync error'); console.warn('Save failed', e); }
+  _saveBusy = false;
 }
 
+// main snapshot → whole roster (fetches the other pieces; retries if a save is mid-way)
+async function readRoster(main) {
+  const n = main.parts || 1;
+  if (n === 1) return JSON.parse(main.data);
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const rest = await Promise.all(Array.from({ length: n - 1 }, (_, i) => window._fsGet(rosterPart(i + 1))));
+    if (rest.every(d => d.exists() && d.data().v === main.v)) return JSON.parse(main.data + rest.map(d => d.data().data).join(''));
+    await new Promise(r => setTimeout(r, 700));
+  }
+  throw new Error('Roster pieces out of step');
+}
+
+let _listenSeq = 0;
 function cloudListen() {
   if (!window._fbReady) return;
-  window._fsSnap(rosterDoc(), snap => {
-    if (snap.exists()) {
-      try {
-        const loaded = JSON.parse(snap.data().data);
-        R = loaded;
-        renderAll();
-        setSync('ok', 'Live');
-      } catch(e) {}
-    }
+  window._fsSnap(rosterDoc(), async snap => {
+    if (!snap.exists()) return;
+    const seq = ++_listenSeq;
+    try {
+      const loaded = await readRoster(snap.data());
+      if (seq !== _listenSeq) return;                   // a newer snapshot arrived meanwhile
+      R = loaded;
+      renderAll();
+      setSync('ok', 'Live');
+    } catch(e) { console.warn('Roster load failed', e); }
   }, () => setSync('err', 'Sync error'));
 }
 
