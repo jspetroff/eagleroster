@@ -242,7 +242,9 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   table.pt td.mt{width:48%;overflow:hidden;text-overflow:ellipsis;max-width:0;font-size:8px;color:#222;}
   table.pt .r{text-align:right;} table.pt .pc{color:#555;font-size:7.5px;font-weight:normal;}
   table.pt sup{font-size:6px;}
-  table.pt.lu{table-layout:fixed;} .lucols{column-count:3;column-gap:12px;} table.pt.lu{margin-bottom:4px;} table.pt.lu td.lur{white-space:normal;}
+  table.pt.lu{table-layout:fixed;}
+  .lue{display:flex;gap:6px;border-bottom:1px solid #000;padding:2px 0 3px;font-size:9px;line-height:1.4;break-inside:avoid;} .lue-l{width:88px;flex:none;} .lue-l b{font-size:9.5px;} .lue-b{flex:1;min-width:0;}
+  .lug{display:grid;grid-auto-flow:column;grid-template-rows:repeat(3,auto);grid-auto-columns:minmax(0,1fr);column-gap:8px;} .lug>div,.lue-b>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;} .lul{display:inline-block;width:16px;color:#555;font-size:8px;}
   .lue-h{font-size:9.5px;font-weight:700;border-bottom:1px solid #000;margin:6px 0 2px;} .lue-r{display:flex;gap:4px;font-size:8.5px;line-height:1.35;border-bottom:1px solid #e5e5e5;break-inside:avoid;} .lue-i{width:14px;text-align:right;color:#555;} .lue-n{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;} .lue-c{white-space:nowrap;} table.pt.lu td.n{max-width:none;width:auto;} table.pt.lue td:last-child{white-space:normal;}
   table.pt td.pbt{font-weight:800;}
   .pbm.vrm{background:#000;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -3565,23 +3567,22 @@ function printLineup() {
   const L = luCur(); if (!L) return;
   const lanes = luLanes(L), per = lanes.length;
   const half = g => {
-    const side = luSide(L, g), counts = luCounts(L, g), opp = ((L.opp_info || {})[g] || {});
+    const side = luSide(L, g), counts = luCounts(L, g), opp = ((L.opp_info || {})[g] || {}), pool = luPool(g);
+    // last names, with a first initial when two swimmers share one (A. Mitchell / E. Mitchell)
+    const nm = sid => { const s = R.swimmers[sid]; if (!s) return '?'; return pool.some(o => o.id !== sid && o.last === s.last) ? `${s.first[0]}. ${s.last}` : s.last; };
     const ev = LU_FORMATS[L.format].map(key => {
       const k = luKind(key), o = opp[key];
-      let rows = '';
-      if (k === 'ind') rows = luOrdered(side, key).map((sid, i) => { const h = Math.floor(i / per) + 1;
-        return `<tr><td class="r">${h === 1 ? 'L' + lanes[i % per] : 'Ex'}</td><td class="n">${esc(luName(sid))}</td></tr>`; }).join('');
-      if (k === 'relay') rows = (side.relays[key] || []).map((legs, ri) => `<tr><td class="r">${String.fromCharCode(65 + ri)}${ri < LU_RELAYS_SCORING ? '' : ' ex'}</td><td class="n lur">${legs.map(s => s ? esc(luShort(s)) : '—').join(', ')}</td></tr>`).join('');
-      if (k === 'dive') rows = (side.divers[key] || []).map(sid => `<tr><td></td><td class="n">${esc(luName(sid))}</td></tr>`).join('');
-      return `<table class="pt lu"><colgroup><col style="width:26px"><col></colgroup><tr><th colspan="2">${esc(luLabel(L, key))}${o ? ` <span class="pc">${esc(L.opp || 'Opp')}: ${o.n != null ? o.n + ' · ' : ''}${(o.times || []).map(esc).join(', ')}</span>` : ''}</th></tr>${rows || '<tr><td></td><td class="n" style="color:#999">—</td></tr>'}</table>`;
+      let body = '';
+      if (k === 'ind') body = `<div class="lug">${luOrdered(side, key).map((sid, i) => `<div><span class="lul">${Math.floor(i / per) ? 'Ex' : lanes[i % per]}</span>${esc(nm(sid))}</div>`).join('')}</div>`;
+      if (k === 'relay') body = (side.relays[key] || []).map((legs, ri) => `<div><span class="lul">${String.fromCharCode(65 + ri)}${ri < LU_RELAYS_SCORING ? '' : 'x'}</span>${legs.map(s => s ? esc(nm(s)) : '—').join(', ')}</div>`).join('');
+      if (k === 'dive') body = `<div class="lug">${(side.divers[key] || []).map(sid => `<div>${esc(nm(sid))}</div>`).join('')}</div>`;
+      return `<div class="lue"><div class="lue-l"><b>${esc(luLabel(L, key))}</b>${o ? `<div class="pc">${esc(L.opp || 'Opp')}: ${o.n != null ? o.n + ' · ' : ''}${(o.times || []).map(esc).join(', ')}</div>` : ''}</div><div class="lue-b">${body}</div></div>`;
     }).join('');
-    const pool = luPool(g);
     const list = pool.map((s, i) => { const c = counts[s.id];
       const codes = (L.out || {})[s.id] ? 'OUT' : c ? c.codes.map(k => luCode(L, k)).concat(c.dive.length ? ['DIVE'] : []).join(', ') + (c.over ? ' !' : '') : '';
       return `<div class="lue-r"><span class="lue-i">${i + 1}</span><span class="lue-n">${esc(s.first + ' ' + s.last)}</span><span class="lue-c">${codes}</span></div>`; }).join('');
-    return `<div class="ttpack"><div class="ph"><b>${(L.venue || 'home') === 'away' ? `Emory at ${esc(L.opp || 'Opponent')}` : `${esc(L.opp || 'Opponent')} at Emory`} (${g === 'W' ? 'Women' : 'Men'}) — ${esc(L.date || '')}</b> &nbsp;${L.lanes} lanes, ${L.side === 'odd' ? 'odds' : 'evens'} · L = lane in the scoring heat, Ex = exhibition · ! = over the entry limit</div>
-      <div class="pcols lucols">${ev}</div>
-      <div class="lue-h">${g === 'W' ? 'Women' : 'Men'} — entries</div><div class="pcols lucols">${list}</div></div>`;
+    return `<div class="ttpack"><div class="ph"><b>${(L.venue || 'home') === 'away' ? `Emory at ${esc(L.opp || 'Opponent')}` : `${esc(L.opp || 'Opponent')} at Emory`} (${g === 'W' ? 'Women' : 'Men'}) — ${esc(L.date || '')}</b> &nbsp;${L.lanes} lanes, ${L.side === 'odd' ? 'odds' : 'evens'} · # = lane, Ex = exhibition, x = ex relay, ! = over limit</div>
+      <div style="display:grid;grid-template-columns:3fr 2fr;gap:14px;align-items:start"><div>${ev}</div><div><div class="lue-h">${g === 'W' ? 'Women' : 'Men'} — entries</div>${list}</div></div></div>`;
   };
   document.getElementById('luPrint').innerHTML = half('W') + half('M');
   window.print();
