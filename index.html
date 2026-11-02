@@ -28,6 +28,15 @@
     document.getElementById('loginMsg').textContent = 'Sign-in failed: ' + (e.code || e.message);
   });
   window._signOut = () => signOut(auth);
+  // Lessons tab: read-only Google Sheets access, asked for separately so the normal sign-in is unchanged
+  const sheetsProvider = new GoogleAuthProvider();
+  sheetsProvider.addScope('https://www.googleapis.com/auth/spreadsheets.readonly');
+  window._sheetsAuth = async () => {
+    if (auth.currentUser) sheetsProvider.setCustomParameters({ login_hint: auth.currentUser.email });
+    const res = await signInWithPopup(auth, sheetsProvider);
+    const cred = GoogleAuthProvider.credentialFromResult(res);
+    return cred && cred.accessToken;
+  };
 
   // Same gate as SwimScore: only the authorized Google account sees the app
   onAuthStateChanged(auth, user => {
@@ -298,6 +307,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div class="tab" onclick="switchTab('records',this)">06 · Records</div>
   <div class="tab" onclick="switchTab('standards',this)">07 · Standards</div>
   <div class="tab" onclick="switchTab('tags',this)">08 · Tags</div>
+  <div class="tab" onclick="switchTab('lessons',this)">09 · Lessons</div>
 </div>
 
 <!-- ═══════════════════════════════════ TAB 1: ROSTER ═══════════════════════════════════ -->
@@ -545,6 +555,12 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 </div>
 
 <!-- ═══════════════════════════════════ TAB 8: RECRUIT TAGS ═══════════════════════════════════ -->
+<!-- ═══════════════════════════════════ TAB 9: LESSONS ═══════════════════════════════════ -->
+<div id="tab-lessons" class="tp content">
+  <div class="sec-hdr"><h3>Private Lessons</h3></div>
+  <div id="lsBody"></div>
+</div>
+
 <div id="tab-tags" class="tp content">
   <div class="sec-hdr">
     <h3>Recruit Board Tags</h3>
@@ -830,6 +846,7 @@ function switchTab(id, el) {
   if (id==='records') renderRecords();
   if (id==='standards') renderStandards();
   if (id==='tags') renderTags();
+  if (id==='lessons') renderLessons();
 }
 
 // ── ROSTER RENDERING ──────────────────────────────────────────────────────
@@ -3029,6 +3046,117 @@ function printRecords() {
     `<div class="ph"><b>Emory ${_recG === 'W' ? "Women's" : "Men's"} Swimming &amp; Diving Records</b> &nbsp;printed ${new Date().toLocaleDateString()}</div>
      ${tbl('swim', 'Individual')}${tbl('dive', 'Diving')}${tbl('relay', 'Relays')}`;
   window.print();
+}
+
+// ── LESSONS (private lessons ledger, read live from the Google Sheet) ─────
+// Instructors fill in their own sheets; the Master workbook totals them. This tab only reads it (read-only
+// Google Sheets access on your Google sign-in, asked for once per browser session).
+const LESSONS_SHEET_ID = '1ehC_adguvikOOlRWj-kffPyb4HY_qKhSVrWLlFcjihg';
+const LESSONS_SHEET_URL = `https://docs.google.com/spreadsheets/d/${LESSONS_SHEET_ID}/edit`;
+let _ls = { tabs: null, tab: null, cache: {}, showZero: false, err: '' };
+
+function lsToken() {
+  try { const t = JSON.parse(sessionStorage.getItem('eagleroster_sheets') || 'null'); if (t && t.exp > Date.now()) return t.tok; } catch (e) {}
+  return null;
+}
+async function lsConnect() {
+  try {
+    const tok = await window._sheetsAuth();
+    if (!tok) throw new Error('Google did not return access to Sheets.');
+    try { sessionStorage.setItem('eagleroster_sheets', JSON.stringify({ tok, exp: Date.now() + 50 * 60 * 1000 })); } catch (e) {}
+    _ls.err = ''; _ls.tabs = null; _ls.cache = {};
+  } catch (e) { _ls.err = 'Could not connect: ' + (e.code || e.message); }
+  renderLessons();
+}
+async function lsFetch(path) {
+  const tok = lsToken();
+  if (!tok) { const e = new Error('connect'); e.needAuth = true; throw e; }
+  const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${LESSONS_SHEET_ID}${path}`, { headers: { Authorization: 'Bearer ' + tok } });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401) { try { sessionStorage.removeItem('eagleroster_sheets'); } catch (e) {} const e = new Error('connect'); e.needAuth = true; throw e; }
+  if (!r.ok) throw new Error((j.error && j.error.message) || ('Google Sheets error ' + r.status));
+  return j;
+}
+
+// Rows → {rows, totals, cols}. Columns are found by their headings (older months have Group/Total columns,
+// and one is shifted a column).
+function lsParse(values) {
+  const clean = v => String(v == null ? '' : v).trim();
+  const hi = values.findIndex(r => (r || []).some(c => /^instructor$/i.test(clean(c))));
+  if (hi < 0) return null;
+  const H = values[hi].map(c => clean(c).toLowerCase());
+  const at = name => H.indexOf(name);
+  const ci = at('instructor'), tc = at('totals');
+  const cols = [['coord', 'coordinator sum', 'Coordinator'], ['saac', 'saac facility sum', 'SAAC'], ['wpec', 'wpec facility sum', 'WPEC'],
+    ['op', 'operation sum', 'Operation'], ['priv', 'private lesson money', 'Private lessons'], ['group', 'group lesson money', 'Group lessons'],
+    ['total', 'lesson money total', 'Lesson total']].map(([k, h, label]) => ({ k, i: at(h), label })).filter(c => c.i >= 0);
+  const money = v => { v = clean(v); if (!v || /#/.test(v)) return null; const n = parseFloat(v.replace(/[$,]/g, '')); return isNaN(n) ? null : n; };
+  const rows = [], totals = [];
+  values.slice(hi + 1).forEach(r => {
+    r = r || [];
+    const name = clean(r[ci]);
+    if (name) {
+      const row = { name, date: clean(r.slice(0, ci).find(c => /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(clean(c))) || '') };
+      cols.forEach(c => { row[c.k] = money(r[c.i]); });
+      rows.push(row);
+    }
+    if (tc > 0 && clean(r[tc - 1])) totals.push({ label: clean(r[tc - 1]), value: clean(r[tc]) });
+  });
+  return { rows, totals, cols };
+}
+
+async function renderLessons() {
+  const box = document.getElementById('lsBody');
+  if (!box) return;
+  const connectCard = msg => `<div class="card"><div style="font-size:.85rem;margin-bottom:.75rem">${msg}</div>
+    <button class="btn bprimary" onclick="lsConnect()">Connect Google Sheets</button>
+    <div style="font-size:.72rem;color:var(--text-dim);margin-top:.6rem">Google will ask to let EagleRoster <b>see</b> your spreadsheets (read-only). Sign in with an account that can open the Lessons sheet. Access lasts for this browser session.</div>
+    ${_ls.err ? `<div class="st sterr" style="margin-top:.6rem">${esc(_ls.err)}</div>` : ''}</div>`;
+  if (!lsToken()) { box.innerHTML = connectCard('Reads the private lessons workbook live from Google Sheets.'); return; }
+  try {
+    if (!_ls.tabs) {
+      box.innerHTML = '<div style="color:var(--text-dim);font-size:.82rem">Loading the workbook…</div>';
+      const meta = await lsFetch('?fields=sheets.properties(title,index)');
+      _ls.tabs = (meta.sheets || []).map(s => s.properties.title);
+      if (!_ls.tab || !_ls.tabs.includes(_ls.tab)) _ls.tab = _ls.tabs[0];
+    }
+    if (!_ls.cache[_ls.tab]) {
+      const v = await lsFetch(`/values/${encodeURIComponent(`'${_ls.tab.replace(/'/g, "''")}'!A1:P150`)}`);
+      _ls.cache[_ls.tab] = lsParse(v.values || []) || { rows: [], totals: [], cols: [], bad: true };
+    }
+  } catch (e) {
+    if (e.needAuth) { box.innerHTML = connectCard('Your Google Sheets access has expired — connect again to load the workbook.'); return; }
+    box.innerHTML = `<div class="st sterr">${esc(e.message)}</div>` + connectCard('');
+    return;
+  }
+  const d = _ls.cache[_ls.tab];
+  const fmt = n => n == null ? '' : (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const lead = d.cols.find(c => c.k === 'total') || d.cols.find(c => c.k === 'priv');
+  const rows = d.rows.filter(r => _ls.showZero || d.cols.some(c => r[c.k]));
+  const swimmers = Object.values(R.swimmers || {});
+  const badge = name => {
+    const m = name.match(/^([^,]+),\s*(.+)$/); if (!m) return '';
+    const full = `${m[2]} ${m[1]}`;
+    for (const g of ['W', 'M']) { const r = nmMatch(full, g, swimmers, R.aliases); if (r.id && (r.how === 'exact' || r.how === 'alias')) return ' ' + classBadge(R.swimmers[r.id]); }
+    return '';
+  };
+  const tabOpts = _ls.tabs.map(t => `<option ${t === _ls.tab ? 'selected' : ''}>${esc(t)}</option>`).join('');
+  box.innerHTML = `
+    <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+      <select onchange="_ls.tab=this.value;renderLessons()" style="width:auto">${tabOpts}</select>
+      <label class="check-item" style="font-size:.75rem"><input type="checkbox" ${_ls.showZero ? 'checked' : ''} onchange="_ls.showZero=this.checked;renderLessons()"> Show instructors with no lessons</label>
+      <button class="btn bsm" onclick="delete _ls.cache[_ls.tab];renderLessons()">&#8635; Refresh</button>
+      <a href="${LESSONS_SHEET_URL}" target="_blank" style="color:var(--gold);font-size:.78rem">Open sheet &#8599;</a>
+    </div>
+    ${d.bad ? '<div class="st sterr">This tab doesn\'t have the usual INSTRUCTOR table.</div>' : ''}
+    ${d.totals.length ? `<div class="card"><div class="ct">Totals — ${esc(_ls.tab)}</div><div style="display:flex;flex-wrap:wrap;gap:.5rem 1.5rem">${
+      d.totals.map(t => `<div><div style="font-size:.68rem;color:var(--text-dim);font-family:var(--fm)">${esc(t.label)}</div><div style="font-weight:700;font-family:var(--fm)">${/#/.test(t.value) || !t.value ? '—' : esc(t.value)}</div></div>`).join('')}</div></div>` : ''}
+    <div class="card" style="overflow-x:auto"><div class="ct">Instructors · ${rows.length}${_ls.showZero ? '' : ' with lessons'}</div>
+      ${rows.length ? `<table class="tbl"><thead><tr><th>Instructor</th><th>Date</th>${d.cols.map(c => `<th style="text-align:right">${c.label}</th>`).join('')}</tr></thead><tbody>${
+        rows.map(r => `<tr><td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(r.name)}${badge(r.name)}</td><td class="tt-meet" style="white-space:nowrap">${esc(r.date)}</td>${
+          d.cols.map(c => `<td class="ttime" style="text-align:right;white-space:nowrap${c === lead ? ';font-weight:700' : ''}">${fmt(r[c.k])}</td>`).join('')}</tr>`).join('')
+      }</tbody></table>` : '<div style="color:var(--text-dim);font-size:.82rem">No lessons on this tab.</div>'}
+    </div>`;
 }
 
 let _vr = new Set();
