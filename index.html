@@ -3412,9 +3412,18 @@ function luRelayLeg(key, ri, leg, sid) { const L = luCur(); if (!L) return; cons
 function luRelayDel(key, ri) { const L = luCur(); if (!L) return; luSide(L, _lu.g).relays[key].splice(ri, 1); save(); renderLineup(); }
 function luRelayMove(key, ri, dir) { const L = luCur(); if (!L) return; const a = luSide(L, _lu.g).relays[key], j = ri + dir; if (j < 0 || j >= a.length) return; [a[ri], a[j]] = [a[j], a[ri]]; save(); renderLineup(); }
 function luToggleOut(sid) { const L = luCur(); if (!L) return; L.out = L.out || {}; if (L.out[sid]) delete L.out[sid]; else L.out[sid] = true; save(); renderLineup(); }
+// letter of the other relay in this event a swimmer is already on (a swimmer can't be on two relays of the same event)
+function luOnRelay(key, sid, ri, leg) {
+  const L = luCur(); if (!L || !sid) return null;
+  const rel = luSide(L, _lu.g).relays[key] || [];
+  for (let i = 0; i < rel.length; i++) for (let j = 0; j < 4; j++) if (rel[i][j] === sid && !(i === ri && j === leg)) return String.fromCharCode(65 + i);
+  return null;
+}
 function luType(el, key, ri, leg) {   // typed name → fill
   const sid = luFind(el.value, _lu.g);
   if (!sid) { el.style.borderColor = 'var(--red)'; el.title = 'No single swimmer matches — keep typing'; return; }
+  const on = ri != null && luOnRelay(key, sid, ri, leg);
+  if (on) { el.style.borderColor = 'var(--red)'; el.title = `${luName(sid)} is already on the ${on} relay`; _lu.warn = { key, text: `${luName(sid)} is already on the ${on} relay.` }; luShowWarn(); return; }
   el.onchange = el.onkeydown = null;   // the box is about to be redrawn; don't let its blur fire a second change
   _lu.focus = luNextSpot(key, ri, leg);
   if (ri == null) luAdd(key, sid); else luRelayLeg(key, ri, leg, sid);
@@ -3441,8 +3450,10 @@ function luDrop(ev, key, ri, leg) {
     const to = +(ev.target.closest('[data-idx]') || {}).dataset?.idx;
     luMove(key, list.indexOf(d.sid), isNaN(to) ? list.length - 1 : to); return;
   }
+  if (ri != null) { const on = luOnRelay(key, d.sid, ri, leg); if (on) { _lu.warn = { key, text: `${luName(d.sid)} is already on the ${on} relay.` }; renderLineup(); return; } }
   if (ri == null) luAdd(key, d.sid); else luRelayLeg(key, ri, leg, d.sid);
 }
+function luShowWarn() { const w = _lu.warn, el = w && document.getElementById('luWarn_' + w.key); if (el) el.textContent = w.text; }
 
 function renderLineup() {
   if (_lu.busy) return; _lu.busy = true;
@@ -3477,7 +3488,12 @@ function renderLineupNow() {
     <div class="fbar" style="margin:0"><div class="fpill ${g === 'W' ? 'act' : ''}" onclick="_lu.g='W';_lu.sel=null;renderLineup()">Women</div><div class="fpill ${g === 'M' ? 'act' : ''}" onclick="_lu.g='M';_lu.sel=null;renderLineup()">Men</div></div>
   </div><div style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm)">Lanes ${lanes.join(', ')} (middle out) · first ${per} in an event = scoring heat, the rest exhibition · first ${LU_RELAYS_SCORING} relays score · limits per swimmer: ${LU_LIMIT.total} events, ${LU_LIMIT.ind} individual, ${LU_LIMIT.relay} relays</div></div>`;
 
-  const datalist = `<datalist id="luNames">${luPool(g).map(s => `<option value="${esc(s.first + ' ' + s.last)}">`).join('')}</datalist>`;
+  const opt = s => `<option value="${esc(s.first + ' ' + s.last)}">`;
+  const datalist = `<datalist id="luNames">${luPool(g).map(opt).join('')}</datalist>` + LU_FORMATS[L.format].filter(k => luKind(k) === 'relay').map(k => {
+    const used = new Set((side.relays[k] || []).flat().filter(Boolean));   // already on a relay in this event → not offered again
+    return `<datalist id="luNames_${k}">${luPool(g).filter(s => !used.has(s.id)).map(opt).join('')}</datalist>`;
+  }).join('');
+  const warnNow = _lu.warn; _lu.warn = null;
   const dragAttrs = (sid, from) => `draggable="true" ondragstart="_lu.drag={sid:'${sid}',from:${from ? JSON.stringify(from).replace(/"/g, '&quot;') : 'null'}}"`;
   const dropAttrs = (key, ri, leg) => `ondragover="event.preventDefault()" ondrop="luDrop(event,'${key}',${ri == null ? 'null' : ri},${leg == null ? 'null' : leg})"`;
   const warn = sid => counts[sid] && counts[sid].over ? ' style="color:var(--red);font-weight:700" title="Over the entry limit"' : '';
@@ -3510,9 +3526,9 @@ function renderLineupNow() {
             <button class="btn bsm" onclick="luRelayMove('${key}',${ri},-1)">&#8593;</button><button class="btn bsm" onclick="luRelayMove('${key}',${ri},1)">&#8595;</button>
             <button class="btn bsm" onclick="luRelayDel('${key}',${ri})">&#x2715;</button></div>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.3rem;margin-top:.3rem">${legs.map((sid, leg) =>
-            `<input list="luNames" data-lf="${key}|${ri}|${leg}" onkeydown="if((event.key==='Tab'&&!event.shiftKey||event.key==='Enter')&&this.value.trim()){event.preventDefault();this.onchange()}" ${dropAttrs(key, ri, leg)} value="${sid ? esc(luName(sid)) : ''}" placeholder="${key === 'MR' ? ['Back', 'Breast', 'Fly', 'Free'][leg] : 'Leg ' + (leg + 1)}"
+            `<input list="luNames_${key}" data-lf="${key}|${ri}|${leg}" onkeydown="if((event.key==='Tab'&&!event.shiftKey||event.key==='Enter')&&this.value.trim()){event.preventDefault();this.onchange()}" ${dropAttrs(key, ri, leg)} value="${sid ? esc(luName(sid)) : ''}" placeholder="${key === 'MR' ? ['Back', 'Breast', 'Fly', 'Free'][leg] : 'Leg ' + (leg + 1)}"
                onchange="if(!this.value.trim()){_lu.focus=luNextSpot('${key}',${ri},${leg});luRelayLeg('${key}',${ri},${leg},null)}else{luType(this,'${key}',${ri},${leg})}" ${sid && counts[sid] && counts[sid].over ? 'style="color:var(--red);font-weight:700"' : ''}>`).join('')}</div></div>`;
-      }).join('') + `<button class="btn bsm" data-lf="${key}|add" style="margin-top:.4rem" onclick="luAddRelay('${key}')">+ Add relay</button>`;
+      }).join('') + `<div id="luWarn_${key}" style="color:var(--red);font-size:.75rem">${warnNow && warnNow.key === key ? esc(warnNow.text) : ''}</div><button class="btn bsm" data-lf="${key}|add" style="margin-top:.4rem" onclick="luAddRelay('${key}')">+ Add relay</button>`;
     } else {
       const dv = side.divers[key] || [];
       body = dv.map(sid => `<div class="imp-row"><span style="flex:1">${esc(luName(sid))}</span><button class="btn bsm" onclick="luRemove('${key}','${sid}')">&#x2715;</button></div>`).join('') +
