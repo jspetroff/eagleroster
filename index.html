@@ -226,7 +226,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   body.ptags #tagPrint .rtag{box-shadow:none;outline:.5px dashed #999;margin-bottom:0;break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .code-print{display:inline!important;font-family:var(--fm);font-weight:700;}
   .content{padding:0;max-width:none;}
-  #ttList,#stdBanner,#stdList,#stdNote{display:none!important;}
+  #ttList,#stdBanner,#stdList,#stdNote,#luBody{display:none!important;}
   table.pt.st{font-size:9.5px;margin-bottom:10px;} table.pt.st td{padding:2px 4px;} table.pt.st td.n{width:auto;max-width:none;white-space:normal;}
   table.pt.rt{font-size:10px;margin-bottom:10px;} table.pt.rt th{font-size:11px;} table.pt.rt td{padding:2px 4px;}
   table.pt.rt td.rl{width:28%;} table.pt.rt td.n{width:40%;max-width:none;white-space:normal;}
@@ -242,6 +242,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   table.pt td.mt{width:48%;overflow:hidden;text-overflow:ellipsis;max-width:0;font-size:8px;color:#222;}
   table.pt .r{text-align:right;} table.pt .pc{color:#555;font-size:7.5px;font-weight:normal;}
   table.pt sup{font-size:6px;}
+  table.pt.lu{table-layout:fixed;} table.pt.lu td.n{max-width:none;width:auto;} table.pt.lue td:last-child{white-space:normal;}
   table.pt td.pbt{font-weight:800;}
   .pbm.vrm{background:#000;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .pbm.stdm{border-radius:50%;min-width:8px;text-align:center;}
@@ -311,6 +312,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div class="tab" onclick="switchTab('times',this)">06 · Times Upload</div>
   <div class="tab" onclick="switchTab('tags',this)">07 · Tags</div>
   <div class="tab" onclick="switchTab('lessons',this)">08 · Lessons</div>
+  <div class="tab" onclick="switchTab('lineup',this)">09 · Lineup</div>
 </div>
 
 <!-- ═══════════════════════════════════ TAB 1: ROSTER ═══════════════════════════════════ -->
@@ -545,6 +547,13 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 
 <!-- ═══════════════════════════════════ TAB 8: RECRUIT TAGS ═══════════════════════════════════ -->
 <!-- ═══════════════════════════════════ TAB 9: LESSONS ═══════════════════════════════════ -->
+<!-- ═══════════════════════════════════ TAB 9: LINEUP ═══════════════════════════════════ -->
+<div id="tab-lineup" class="tp content" style="max-width:none">
+  <div class="sec-hdr"><h3>Dual Meet Lineup</h3></div>
+  <div id="luBody"></div>
+  <div id="luPrint" class="print-only"></div>
+</div>
+
 <div id="tab-lessons" class="tp content">
   <div class="sec-hdr"><h3>Private Lessons</h3></div>
   <div id="lsBody"></div>
@@ -865,6 +874,7 @@ function switchTab(id, el) {
   if (id==='standards') renderStandards();
   if (id==='tags') renderTags();
   if (id==='lessons') renderLessons();
+  if (id==='lineup') renderLineup();
 }
 
 // ── ROSTER RENDERING ──────────────────────────────────────────────────────
@@ -3260,6 +3270,262 @@ async function renderLessons() {
     </div>`;
 }
 
+// ── LINEUP (dual-meet lineups) ────────────────────────────────────────────
+// Saved in R.lineups[id] = { id, opp, date, format, lanes, side, out:{sid:true},
+//   W/M: { entries:{key:[sid]}, manual:{key:true}, relays:{key:[[sid,sid,sid,sid]]}, divers:{key:[sid]} }, opp_info:{W/M:{key:{n, times}}} }
+// Our lanes = half the pool (odds or evens), filled middle-out. The first (our lane count) swimmers in an event are
+// the scoring heat; the rest are exhibition. The first 2 relays score. Limits per swimmer: 4 events, 3 individual, 2 relays.
+const LU_FORMATS = {
+  '13': ['MR', '1000 FS', '200 FS', '50 FS', '200 IM', 'D1', '200 FL', '100 FS', '200 BK', '500 FS', 'D2', '200 BR', 'FR'],
+  '15': ['100 BK', '100 BR', '100 FL', '1000 FS', '200 FS', '50 FS', '200 IM', 'D1', '200 FL', '100 FS', '200 BK', '500 FS', 'D2', '200 BR', 'FR'],
+  '16': ['MR', '1000 FS', '200 FS', '100 BK', '100 BR', '200 FL', '50 FS', 'D1', '100 FS', '200 BK', '200 BR', '500 FS', '100 FL', 'D2', '200 IM', 'FR'],
+};
+const LU_LABEL = { MR: '200 Medley Relay', FR: '200 Free Relay', D1: 'Diving', D2: 'Diving (2nd)' };
+const LU_CODE = { '50 FS': '50', '100 FS': '100', '200 FS': '200', '500 FS': '500', '1000 FS': '1000', '100 BK': '1BK', '200 BK': 'BK',
+  '100 BR': '1BR', '200 BR': 'BR', '100 FL': '1FL', '200 FL': 'FL', '200 IM': 'IM', MR: 'MR', FR: 'FR' };
+const LU_LIMIT = { total: 4, ind: 3, relay: 2 }, LU_RELAYS_SCORING = 2;
+const luKind = k => k === 'MR' || k === 'FR' ? 'relay' : /^D\d$/.test(k) ? 'dive' : 'ind';
+let _lu = { id: null, g: 'W', sel: null, drag: null };
+
+function luCur() { ensureState(); R.lineups = R.lineups || {}; return R.lineups[_lu.id] || null; }
+function luSide(L, g) { L[g] = L[g] || {}; const s = L[g]; s.entries = s.entries || {}; s.manual = s.manual || {}; s.relays = s.relays || {}; s.divers = s.divers || {}; return s; }
+// our lanes, middle-out: 10 lanes evens → 6,4,8,2,10
+function luLanes(L) {
+  const n = +L.lanes || 10, mid = (n + 1) / 2;
+  const mine = []; for (let i = 1; i <= n; i++) if ((i % 2 === 0) === (L.side !== 'odd')) mine.push(i);
+  return mine.sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid) || a - b);
+}
+// best time this season, else lifetime best
+function luSeed(sid, ev) {
+  const season = seasonOf(new Date().toISOString().slice(0, 10));
+  let best = null;
+  (R.swims || []).forEach(s => { if (s.sid === sid && s.kind === 'ind' && s.event === ev && seasonOf(s.date) === season && (!best || timeToSec(s.time) < timeToSec(best))) best = s.time; });
+  if (best) return { time: best, sb: true };
+  const t = ((R.swimmers[sid] || {}).times || {})[ev];
+  return t && t.lbt ? { time: t.lbt, sb: false } : null;
+}
+// relay leg time: lead-off = flat 50, others = best 50 split (else flat)
+function luLeg(sid, stroke, leg) {
+  const ev = '50 ' + stroke, season = seasonOf(new Date().toISOString().slice(0, 10));
+  let best = null;
+  (R.swims || []).forEach(s => {
+    if (s.sid !== sid || s.event !== ev || seasonOf(s.date) !== season) return;
+    if (leg === 1 && s.kind !== 'ind') return;
+    if (!best || timeToSec(s.time) < best) best = timeToSec(s.time);
+  });
+  if (best == null && leg > 1) { const f = luSeed(sid, ev); if (f) best = timeToSec(f.time); }
+  if (best == null && leg === 1) { const f = luSeed(sid, ev); if (f) best = timeToSec(f.time); }
+  return best;
+}
+function luRelayTime(key, legs) {
+  let t = 0;
+  for (let i = 0; i < 4; i++) {
+    if (!legs[i]) return null;
+    const x = luLeg(legs[i], key === 'MR' ? MEDLEY_LEGS[i] : 'FS', i + 1);
+    if (x == null) return null; t += x;
+  }
+  return hy3Fmt(t);
+}
+// event order: fastest first unless reordered by hand
+function luOrdered(side, key) {
+  const list = (side.entries[key] || []).slice();
+  if (side.manual[key]) return list;
+  const sec = sid => { const s = luSeed(sid, key); return s ? timeToSec(s.time) : 1e9; };
+  return list.sort((a, b) => sec(a) - sec(b));
+}
+// per-swimmer counts for the limits (every swim counts, exhibition included; diving doesn't)
+function luCounts(L, g) {
+  const side = luSide(L, g), c = {};
+  const add = (sid, kind, key) => { const x = (c[sid] = c[sid] || { ind: 0, relay: 0, codes: [], dive: [] }); if (kind === 'dive') x.dive.push(key); else { x[kind]++; x.codes.push(key); } };
+  LU_FORMATS[L.format].forEach(key => {
+    const k = luKind(key);
+    if (k === 'ind') (side.entries[key] || []).forEach(sid => add(sid, 'ind', key));
+    if (k === 'relay') { const seen = new Set(); (side.relays[key] || []).forEach(r => r.forEach(sid => { if (sid && !seen.has(sid)) { seen.add(sid); add(sid, 'relay', key); } })); }
+    if (k === 'dive') (side.divers[key] || []).forEach(sid => add(sid, 'dive', key));
+  });
+  Object.values(c).forEach(x => { x.total = x.ind + x.relay; x.over = x.total > LU_LIMIT.total || x.ind > LU_LIMIT.ind || x.relay > LU_LIMIT.relay; });
+  return c;
+}
+const luName = sid => { const s = R.swimmers[sid]; return s ? `${s.first} ${s.last}` : '?'; };
+const luShort = sid => { const s = R.swimmers[sid]; return s ? s.last : '?'; };
+function luPool(g) {
+  return Object.values(R.swimmers).filter(s => s.gender === g && isActive(s)).sort((a, b) => (a.last + a.first).localeCompare(b.last + b.first));
+}
+function luFind(text, g) {   // typed name → swimmer id
+  const t = nmNorm(text); if (!t) return null;
+  const pool = luPool(g);
+  const exact = pool.find(s => nmNorm(s.first + ' ' + s.last) === t || nmNorm(s.last + ', ' + s.first) === t);
+  if (exact) return exact.id;
+  const hits = pool.filter(s => nmNorm(s.first + ' ' + s.last).includes(t) || nmNorm(s.last).startsWith(t));
+  return hits.length === 1 ? hits[0].id : null;
+}
+
+// ── edits ──
+function luNew() {
+  ensureState(); R.lineups = R.lineups || {};
+  const id = 'lu' + Date.now().toString(36);
+  R.lineups[id] = { id, opp: '', date: new Date().toISOString().slice(0, 10), format: '16', lanes: 10, side: 'even', out: {} };
+  _lu.id = id; save(); renderLineup();
+}
+function luSet(k, v) { const L = luCur(); if (!L) return; L[k] = v; save(); renderLineup(); }
+function luDelete() { const L = luCur(); if (!L || !confirm(`Delete the lineup "${L.opp || 'untitled'}"?`)) return; delete R.lineups[L.id]; _lu.id = null; save(); renderLineup(); }
+function luAdd(key, sid) {
+  const L = luCur(); if (!L || !sid) return;
+  const side = luSide(L, _lu.g), k = luKind(key);
+  const arr = k === 'dive' ? (side.divers[key] = side.divers[key] || []) : (side.entries[key] = side.entries[key] || []);
+  if (!arr.includes(sid)) arr.push(sid);
+  save(); renderLineup();
+}
+function luRemove(key, sid) {
+  const L = luCur(); if (!L) return; const side = luSide(L, _lu.g);
+  ['entries', 'divers'].forEach(f => { if (side[f][key]) side[f][key] = side[f][key].filter(x => x !== sid); });
+  save(); renderLineup();
+}
+function luMove(key, from, to) {   // hand reorder within an event
+  const L = luCur(); if (!L) return; const side = luSide(L, _lu.g);
+  const list = luOrdered(side, key); const [x] = list.splice(from, 1); list.splice(to, 0, x);
+  side.entries[key] = list; side.manual[key] = true; save(); renderLineup();
+}
+function luAutoOrder(key) { const L = luCur(); if (!L) return; delete luSide(L, _lu.g).manual[key]; save(); renderLineup(); }
+function luAddRelay(key) { const L = luCur(); if (!L) return; const side = luSide(L, _lu.g); (side.relays[key] = side.relays[key] || []).push([null, null, null, null]); save(); renderLineup(); }
+function luRelayLeg(key, ri, leg, sid) { const L = luCur(); if (!L) return; const r = luSide(L, _lu.g).relays[key][ri]; r[leg] = sid || null; save(); renderLineup(); }
+function luRelayDel(key, ri) { const L = luCur(); if (!L) return; luSide(L, _lu.g).relays[key].splice(ri, 1); save(); renderLineup(); }
+function luRelayMove(key, ri, dir) { const L = luCur(); if (!L) return; const a = luSide(L, _lu.g).relays[key], j = ri + dir; if (j < 0 || j >= a.length) return; [a[ri], a[j]] = [a[j], a[ri]]; save(); renderLineup(); }
+function luToggleOut(sid) { const L = luCur(); if (!L) return; L.out = L.out || {}; if (L.out[sid]) delete L.out[sid]; else L.out[sid] = true; save(); renderLineup(); }
+function luType(el, key, ri, leg) {   // typed name → fill
+  const sid = luFind(el.value, _lu.g);
+  if (!sid) { el.style.borderColor = 'var(--red)'; el.title = 'No single swimmer matches — keep typing'; return; }
+  if (ri == null) luAdd(key, sid); else luRelayLeg(key, ri, leg, sid);
+}
+// tap/click: pick a swimmer in the pool, then click an event's "+" to place them
+function luPick(sid) { _lu.sel = _lu.sel === sid ? null : sid; renderLineup(); }
+function luDrop(ev, key, ri, leg) {
+  ev.preventDefault();
+  const d = _lu.drag; _lu.drag = null; if (!d) return;
+  if (d.from && d.from.key === key && ri == null && luKind(key) === 'ind') {   // reorder within the event
+    const side = luSide(luCur(), _lu.g), list = luOrdered(side, key);
+    const to = +(ev.target.closest('[data-idx]') || {}).dataset?.idx;
+    luMove(key, list.indexOf(d.sid), isNaN(to) ? list.length - 1 : to); return;
+  }
+  if (ri == null) luAdd(key, d.sid); else luRelayLeg(key, ri, leg, d.sid);
+}
+
+function renderLineup() {
+  ensureState(); R.lineups = R.lineups || {};
+  const box = document.getElementById('luBody'); if (!box) return;
+  const list = Object.values(R.lineups).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  if (_lu.id && !R.lineups[_lu.id]) _lu.id = null;
+  if (!_lu.id && list.length) _lu.id = list[0].id;
+  const L = luCur();
+  const pick = `<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+    <select onchange="_lu.id=this.value;renderLineup()" style="width:auto;min-width:220px">${list.length ? '' : '<option>No lineups yet</option>'}${
+      list.map(l => `<option value="${l.id}" ${l.id === _lu.id ? 'selected' : ''}>${esc(l.date || '')} · ${esc(l.opp || 'Untitled')}</option>`).join('')}</select>
+    <button class="btn bsm bprimary" onclick="luNew()">+ New lineup</button>
+    ${L ? `<button class="btn bsm" onclick="printLineup()">&#128424; Print</button><button class="btn bsm bdanger" onclick="luDelete()">Delete</button>` : ''}</div>`;
+  if (!L) { box.innerHTML = pick + '<div style="color:var(--text-dim);font-size:.85rem">Create a lineup to start.</div>'; return; }
+  const g = _lu.g, side = luSide(L, g), lanes = luLanes(L), per = lanes.length, counts = luCounts(L, g), out = L.out || {};
+  const opp = ((L.opp_info || {})[g] || {});
+  const sel = (v, opts) => opts.map(([k, l]) => `<option value="${k}" ${String(v) === String(k) ? 'selected' : ''}>${l}</option>`).join('');
+  const settings = `<div class="card" style="margin-bottom:1rem"><div style="display:flex;gap:.6rem;align-items:flex-end;flex-wrap:wrap">
+    <div><label>Opponent</label><input type="text" value="${esc(L.opp || '')}" onchange="luSet('opp',this.value.trim())" placeholder="Sewanee" style="width:180px"></div>
+    <div><label>Date</label><input type="date" value="${esc(L.date || '')}" onchange="luSet('date',this.value)"></div>
+    <div><label>Format</label><select onchange="luSet('format',this.value)">${sel(L.format, [['13', '13 events'], ['15', '15 events'], ['16', '16 events']])}</select></div>
+    <div><label>Pool</label><select onchange="luSet('lanes',+this.value)">${sel(L.lanes, [[6, '6 lanes'], [8, '8 lanes'], [10, '10 lanes']])}</select></div>
+    <div><label>Our lanes</label><select onchange="luSet('side',this.value)">${sel(L.side, [['even', 'Evens'], ['odd', 'Odds']])}</select></div>
+    <div class="fbar" style="margin:0"><div class="fpill ${g === 'W' ? 'act' : ''}" onclick="_lu.g='W';_lu.sel=null;renderLineup()">Women</div><div class="fpill ${g === 'M' ? 'act' : ''}" onclick="_lu.g='M';_lu.sel=null;renderLineup()">Men</div></div>
+  </div><div style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm)">Lanes ${lanes.join(', ')} (middle out) · first ${per} in an event = scoring heat, the rest exhibition · first ${LU_RELAYS_SCORING} relays score · limits per swimmer: ${LU_LIMIT.total} events, ${LU_LIMIT.ind} individual, ${LU_LIMIT.relay} relays</div></div>`;
+
+  const datalist = `<datalist id="luNames">${luPool(g).map(s => `<option value="${esc(s.first + ' ' + s.last)}">`).join('')}</datalist>`;
+  const dragAttrs = (sid, from) => `draggable="true" ondragstart="_lu.drag={sid:'${sid}',from:${from ? JSON.stringify(from).replace(/"/g, '&quot;') : 'null'}}"`;
+  const dropAttrs = (key, ri, leg) => `ondragover="event.preventDefault()" ondrop="luDrop(event,'${key}',${ri == null ? 'null' : ri},${leg == null ? 'null' : leg})"`;
+  const warn = sid => counts[sid] && counts[sid].over ? ' style="color:var(--red);font-weight:700" title="Over the entry limit"' : '';
+  const placeBtn = key => _lu.sel ? `<button class="btn bsm" onclick="luAdd('${key}','${_lu.sel}')" title="Place ${esc(luName(_lu.sel))}">+ ${esc(luShort(_lu.sel))}</button>` : '';
+  const oppLine = key => { const o = opp[key]; return o ? `<span class="tt-meet" style="margin-left:.5rem">${esc(L.opp || 'Opp')}: ${o.n != null ? o.n + ' · ' : ''}${(o.times || []).map(esc).join(', ')}</span>` : ''; };
+
+  const events = LU_FORMATS[L.format].map(key => {
+    const k = luKind(key), label = LU_LABEL[key] || key;
+    let body = '';
+    if (k === 'ind') {
+      const order = luOrdered(side, key);
+      body = order.map((sid, i) => {
+        const heat = Math.floor(i / per) + 1, lane = lanes[i % per], seed = luSeed(sid, key);
+        return `<div class="imp-row" data-idx="${i}" ${dragAttrs(sid, { key })} ${dropAttrs(key)} style="cursor:grab${heat > 1 ? ';opacity:.75' : ''}">
+          <span style="font-family:var(--fm);font-size:.7rem;width:4.2rem">${heat === 1 ? 'L' + lane : 'Ex H' + heat + ' L' + lane}</span>
+          <span style="flex:1"${warn(sid)}>${esc(luName(sid))}</span>
+          <span class="ttime" style="color:var(--text-dim)">${seed ? esc(seed.time) + (seed.sb ? '' : '*') : '—'}</span>
+          <button class="btn bsm" onclick="luRemove('${key}','${sid}')" title="Remove">&#x2715;</button></div>`;
+      }).join('') +
+        `<div style="display:flex;gap:.4rem;margin-top:.35rem"><input list="luNames" placeholder="Type a name…" style="flex:1" onchange="luType(this,'${key}')">${placeBtn(key)}${side.manual[key] ? `<button class="btn bsm" onclick="luAutoOrder('${key}')" title="Back to fastest-first">Sort by time</button>` : ''}</div>`;
+    } else if (k === 'relay') {
+      const rel = side.relays[key] || [];
+      body = rel.map((legs, ri) => {
+        const heat = Math.floor(ri / per) + 1, lane = lanes[ri % per], est = luRelayTime(key, legs);
+        return `<div style="border-bottom:1px solid rgba(42,48,69,.4);padding:.35rem 0">
+          <div style="display:flex;gap:.4rem;align-items:center;font-size:.75rem"><b>${String.fromCharCode(65 + ri)}</b>
+            <span style="font-family:var(--fm)">${heat === 1 ? 'L' + lane : 'H' + heat + ' L' + lane}</span>
+            <span class="badge ${ri < LU_RELAYS_SCORING ? 'pbb' : 'bbk'}">${ri < LU_RELAYS_SCORING ? 'SCORING' : 'EX'}</span>
+            <span class="ttime" style="color:var(--text-dim);margin-left:auto">${est ? '~' + est : ''}</span>
+            <button class="btn bsm" onclick="luRelayMove('${key}',${ri},-1)">&#8593;</button><button class="btn bsm" onclick="luRelayMove('${key}',${ri},1)">&#8595;</button>
+            <button class="btn bsm" onclick="luRelayDel('${key}',${ri})">&#x2715;</button></div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.3rem;margin-top:.3rem">${legs.map((sid, leg) =>
+            `<input list="luNames" ${dropAttrs(key, ri, leg)} value="${sid ? esc(luName(sid)) : ''}" placeholder="${key === 'MR' ? ['Back', 'Breast', 'Fly', 'Free'][leg] : 'Leg ' + (leg + 1)}"
+               onchange="if(!this.value.trim()){luRelayLeg('${key}',${ri},${leg},null)}else{luType(this,'${key}',${ri},${leg})}" ${sid && counts[sid] && counts[sid].over ? 'style="color:var(--red);font-weight:700"' : ''}>`).join('')}</div></div>`;
+      }).join('') + `<button class="btn bsm" style="margin-top:.4rem" onclick="luAddRelay('${key}')">+ Add relay</button>`;
+    } else {
+      const dv = side.divers[key] || [];
+      body = dv.map(sid => `<div class="imp-row"><span style="flex:1">${esc(luName(sid))}</span><button class="btn bsm" onclick="luRemove('${key}','${sid}')">&#x2715;</button></div>`).join('') +
+        `<div style="display:flex;gap:.4rem;margin-top:.35rem"><input list="luNames" placeholder="Type a diver…" style="flex:1" onchange="luType(this,'${key}')">${placeBtn(key)}</div>`;
+    }
+    return `<div class="card" style="margin-bottom:.6rem" ${k !== 'relay' ? dropAttrs(key) : ''}><div class="ct">${esc(label)}${oppLine(key)}</div>${body}</div>`;
+  }).join('');
+
+  // right: every swimmer with their events (like the spreadsheet), unplaced and over-limit flagged
+  const pool = luPool(g);
+  const summary = pool.map((s, i) => {
+    const c = counts[s.id], isOut = out[s.id];
+    const codes = c ? c.codes.map(k => LU_CODE[k]).concat(c.dive.length ? ['DIVE'] : []).join(', ') : '';
+    return `<div class="imp-row" ${dragAttrs(s.id)} onclick="luPick('${s.id}')" style="cursor:pointer;${_lu.sel === s.id ? 'background:rgba(212,175,55,.15);' : ''}${isOut ? 'opacity:.45;' : ''}">
+      <span style="font-family:var(--fm);font-size:.68rem;width:1.6rem;color:var(--text-dim)">${i + 1}</span>
+      <span style="flex:1;font-size:.8rem${c && c.over ? ';color:var(--red);font-weight:700' : ''}">${esc(s.first)} ${esc(s.last)} ${classBadge(s)}</span>
+      <span style="font-family:var(--fm);font-size:.7rem;${c && c.over ? 'color:var(--red);font-weight:700' : ''}">${isOut ? 'OUT' : (codes || '<span style="color:var(--gold)">—</span>')}</span>
+      <span style="font-family:var(--fm);font-size:.65rem;width:1.4rem;text-align:right;color:var(--text-dim)">${c ? c.total : 0}</span>
+      <button class="btn bsm" onclick="event.stopPropagation();luToggleOut('${s.id}')" title="Mark out / back in" style="padding:.1rem .35rem">${isOut ? 'in' : 'out'}</button></div>`;
+  }).join('');
+  const over = pool.filter(s => counts[s.id] && counts[s.id].over), unplaced = pool.filter(s => !counts[s.id] && !out[s.id]);
+  box.innerHTML = pick + settings + datalist +
+    `<div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:1rem;align-items:start">
+      <div>${events}</div>
+      <div class="card" style="position:sticky;top:.5rem"><div class="ct">${g === 'W' ? 'Women' : 'Men'} · ${pool.length}</div>
+        ${over.length ? `<div class="st sterr" style="margin-bottom:.5rem">Over the limit: ${over.map(s => esc(s.first + ' ' + s.last)).join(', ')}</div>` : ''}
+        ${unplaced.length ? `<div style="font-size:.72rem;color:var(--gold);margin-bottom:.5rem">Not in any event yet: ${unplaced.length}</div>` : ''}
+        <div style="font-size:.68rem;color:var(--text-dim);margin-bottom:.35rem">Drag a name onto an event, or click it and then the event's + button. "out" marks someone unavailable.</div>
+        <div style="max-height:75vh;overflow-y:auto">${summary}</div></div></div>`;
+}
+
+function printLineup() {
+  const L = luCur(); if (!L) return;
+  const lanes = luLanes(L), per = lanes.length;
+  const half = g => {
+    const side = luSide(L, g), counts = luCounts(L, g), opp = ((L.opp_info || {})[g] || {});
+    const ev = LU_FORMATS[L.format].map(key => {
+      const k = luKind(key), o = opp[key];
+      let rows = '';
+      if (k === 'ind') rows = luOrdered(side, key).map((sid, i) => { const s = luSeed(sid, key), h = Math.floor(i / per) + 1;
+        return `<tr><td class="r">${h === 1 ? 'L' + lanes[i % per] : 'Ex ' + lanes[i % per]}</td><td class="n">${esc(luName(sid))}</td><td class="r">${s ? esc(s.time) : ''}</td></tr>`; }).join('');
+      if (k === 'relay') rows = (side.relays[key] || []).map((legs, ri) => `<tr><td class="r">${String.fromCharCode(65 + ri)}${ri < LU_RELAYS_SCORING ? '' : ' ex'}</td><td class="n" style="white-space:normal">${legs.map(s => s ? esc(luShort(s)) : '—').join(', ')}</td><td class="r">${luRelayTime(key, legs) || ''}</td></tr>`).join('');
+      if (k === 'dive') rows = (side.divers[key] || []).map(sid => `<tr><td></td><td class="n">${esc(luName(sid))}</td><td></td></tr>`).join('');
+      return `<table class="pt lu"><colgroup><col style="width:34px"><col><col style="width:56px"></colgroup><tr><th colspan="3">${esc(LU_LABEL[key] || key)}${o ? ` <span class="pc">${esc(L.opp || 'Opp')}: ${o.n != null ? o.n + ' · ' : ''}${(o.times || []).map(esc).join(', ')}</span>` : ''}</th></tr>${rows}</table>`;
+    }).join('');
+    const pool = luPool(g);
+    const list = `<table class="pt lu lue"><colgroup><col style="width:20px"><col><col style="width:42%"></colgroup><tr><th colspan="3">${g === 'W' ? 'Women' : 'Men'} — entries</th></tr>${pool.map((s, i) => { const c = counts[s.id];
+      return `<tr><td class="r">${i + 1}</td><td class="n">${esc(s.first + ' ' + s.last)}</td><td>${(L.out || {})[s.id] ? 'OUT' : c ? c.codes.map(k => LU_CODE[k]).concat(c.dive.length ? ['DIVE'] : []).join(', ') + (c.over ? ' !' : '') : ''}</td></tr>`; }).join('')}</table>`;
+    return `<div class="ttpack"><div class="ph"><b>${esc(L.opp || 'Opponent')} vs. Emory (${g === 'W' ? 'Women' : 'Men'}) — ${esc(L.date || '')}</b> &nbsp;${L.lanes} lanes, ${L.side === 'odd' ? 'odds' : 'evens'} · L = lane in the scoring heat, Ex = exhibition · ! = over the entry limit</div>
+      <div style="display:grid;grid-template-columns:3fr 2fr;gap:12px"><div>${ev}</div><div>${list}</div></div></div>`;
+  };
+  document.getElementById('luPrint').innerHTML = half('W') + half('M');
+  window.print();
+}
+
 let _vr = new Set();
 
 const RELAY_DEFS = [
@@ -3735,6 +4001,9 @@ function renderAll() {
   renderColPicker();
   updateMeta();
   if (document.getElementById('tab-toptimes').classList.contains('act')) renderTopTimes();
+  // lineup: pick up changes saved from another computer, but never while someone is typing in it
+  const lu = document.getElementById('tab-lineup');
+  if (lu && lu.classList.contains('act') && !(document.activeElement && lu.contains(document.activeElement) && /INPUT|SELECT/.test(document.activeElement.tagName))) renderLineup();
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────
