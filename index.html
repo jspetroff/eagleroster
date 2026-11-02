@@ -186,7 +186,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .tbl.d3list tr.d3row-g td{background:rgba(76,175,125,.22);}
 .tbl.d3list tr.d3row-y td{background:rgba(232,197,71,.24);}
 .tbl.d3list tr.d3row-r td{background:rgba(224,92,92,.20);}
-@media print{.d3print table.d3list{font-size:9px;} .d3print table.d3list td{padding:1px 4px;white-space:nowrap;} .d3print tr td{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+@media print{.d3print tr td{-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3print tr.d3row-g td{background:#cfead9!important;} .d3print tr.d3row-y td{background:#f6e7a8!important;} .d3print tr.d3row-r td{background:#f2c4c0!important;}}
 .badge.std{margin-left:.35rem;border:1px solid currentColor;}
 .badge.stdA{background:#e05c5c;color:#fff;border-color:#e05c5c;}
 .badge.stdQ{color:var(--green);background:rgba(76,175,125,.12);}
@@ -2011,12 +2011,16 @@ function printTopTimesPack() {
 function ttPrintHtml() {
   if (_tt.kind === 'relay') return ttRelayPrintHtml();
   if (_tt.kind === 'd3list') {
-    const t = document.querySelector('#ttList table.d3list'), L = window._d3Lists[_tt.gender];
-    if (!t || !L) return '';
-    return `<div class="ph"><b>NCAA DIII Top Times — ${_tt.gender === 'W' ? 'Women' : 'Men'}'s ${esc(_d3l.ev)}${_d3l.team ? ' · ' + esc(_d3l.team) : ''}</b>
+    const L = window._d3Lists[_tt.gender], tabs = [...document.querySelectorAll('#ttList table.d3list')];
+    if (!L || !tabs.length) return '';
+    const body = tabs.map(t => `<table class="pt"><tr><th colspan="3">${esc(t.dataset.ev)}</th></tr>${[...t.querySelectorAll('tr')].map(tr => {
+      const c = tr.cells, nm = c[1].querySelector('div'), sub = c[1].querySelector('.tt-meet');
+      return `<tr class="${tr.className}"${tr.getAttribute('style') ? ' style="font-style:italic"' : ''}><td class="r">${esc(c[0].textContent)}</td><td class="n">${esc(nm.textContent)} <span class="pc">${esc(sub.textContent)}</span></td><td class="r">${esc(c[2].textContent)}</td></tr>`;
+    }).join('')}</table>`).join('');
+    return `<div class="ph"><b>NCAA DIII Top Times — ${_tt.gender === 'W' ? 'Women' : 'Men'}${_d3l.team ? ' · ' + esc(_d3l.team) : _d3l.top ? ' · top ' + _d3l.top : ''}</b>
       &nbsp;USA Swimming report ${L.date} · printed ${new Date().toLocaleDateString()}</div>
       <div class="pm">Emory rows: green ≤ ${D3_TIERS[_tt.gender][0]}, yellow ≤ ${D3_TIERS[_tt.gender][1]}, red after · italic ~rank = Emory swim newer than the report</div>
-      <div class="d3print">${t.outerHTML}</div>`;
+      <div class="pcols pcols2 d3print">${body}</div>`;
   }
   const { byEvent, events } = window._ttLast || { byEvent: {}, events: [] };
   if (!events.length) return '';
@@ -3038,7 +3042,7 @@ function printStandards() {
 // ── DIII lists (full USA Swimming top-times lists, on the Standards tab) ─────
 // Saved per gender in their own Firebase document (roster/d3list_W, roster/d3list_M) so the main roster
 // document stays well under Firestore's 1 MB limit.
-let _d3l = { ev: '50 FS', team: '', newer: true, loading: {} };
+let _d3l = { team: '', newer: true, top: 30, loading: {} };
 window._d3Lists = window._d3Lists || {};
 const d3ListDoc = g => window._fsDoc(window._db, 'roster', 'd3list_' + g);
 async function d3SaveList(g, list) {
@@ -3060,51 +3064,57 @@ function renderD3List() {
   if (_tt.kind !== 'd3list') return;
   const box = document.getElementById('ttList'); if (!box) return;
   const g = _tt.gender, L = window._d3Lists[g];
-  const head = `<div class="ct">DIII Top Times — ${g === 'W' ? 'Women' : 'Men'}</div>`;
-  if (L === undefined) { box.innerHTML = `<div class="card">${head}<div style="color:var(--text-dim);font-size:.82rem">Loading…</div></div>`; d3LoadList(g); return; }
-  if (!L || !L.events) {
-    box.innerHTML = `<div class="card">${head}<div style="color:var(--text-dim);font-size:.82rem">Re-upload the ${g === 'W' ? "women's" : "men's"} USA Swimming NCAA Top Times Report (Top Times → ⇧ DIII ranks) to see the full list here.</div></div>`;
-    return;
-  }
+  const msg = t => `<div class="card"><div class="ct">NCAA DIII Top Times — ${g === 'W' ? 'Women' : 'Men'}</div><div style="color:var(--text-dim);font-size:.82rem">${t}</div></div>`;
+  if (L === undefined) { box.innerHTML = msg('Loading…'); d3LoadList(g); return; }
+  if (!L || !L.events) { box.innerHTML = msg(`Re-upload the ${g === 'W' ? "women's" : "men's"} USA Swimming NCAA Top Times Report (⇧ DIII ranks, above) to see the full lists here.`); return; }
+  const season = seasonOf(L.date), rankOf = d3Ranker(g, season);
   const evs = STD_EVENTS.filter(e => (L.events[e] || []).length);
-  if (!evs.includes(_d3l.ev)) _d3l.ev = evs[0];
-  const all = (L.events[_d3l.ev] || []).map(r => ({ ...r, emory: /^emory/i.test(r.tm) }));
-  // Emory's newer swims: a faster season best in EagleRoster than the time on the list (or not on the list at all)
-  const season = seasonOf(L.date), extra = [];
-  if (_d3l.newer) {
-    const rankOf = d3Ranker(g, season), onList = {};
-    all.filter(r => r.emory).forEach(r => { const sid = d3Sid(r.n, g); if (sid) onList[sid] = timeToSec(r.t); });
-    const best = {};
-    (R.swims || []).forEach(s => {
-      if (s.kind !== 'ind' || s.event !== _d3l.ev || seasonOf(s.date) !== season) return;
-      const sw = R.swimmers[s.sid]; if (!sw || sw.gender !== g) return;
-      if (!best[s.sid] || timeToSec(s.time) < timeToSec(best[s.sid].time)) best[s.sid] = s;
-    });
-    Object.values(best).forEach(s => {
-      if (onList[s.sid] !== undefined && timeToSec(s.time) >= onList[s.sid] - 0.001) return;
-      const rk = rankOf(s.sid, _d3l.ev, s.time); if (!rk) return;
-      const sw = R.swimmers[s.sid];
-      extra.push({ r: rk.rank, t: s.time, n: `${sw.first} ${sw.last}`, tm: 'Emory', d: `${+s.date.slice(5, 7)}/${+s.date.slice(8, 10)}/${s.date.slice(2, 4)}`, emory: true, newer: true, meet: s.meet });
-    });
-  }
-  const teams = {}; all.forEach(r => { teams[r.tm] = (teams[r.tm] || 0) + 1; });
+  // one event's rows: the report's list + (optionally) Emory swims newer/faster than it, placed by time
+  const eventRows = ev => {
+    const all = L.events[ev].map(r => ({ ...r, emory: /^emory/i.test(r.tm) })), extra = [];
+    if (_d3l.newer) {
+      const onList = {};
+      all.filter(r => r.emory).forEach(r => { const sid = d3Sid(r.n, g); if (sid) onList[sid] = timeToSec(r.t); });
+      const best = {};
+      (R.swims || []).forEach(s => {
+        if (s.kind !== 'ind' || s.event !== ev || seasonOf(s.date) !== season) return;
+        const sw = R.swimmers[s.sid]; if (!sw || sw.gender !== g) return;
+        if (!best[s.sid] || timeToSec(s.time) < timeToSec(best[s.sid].time)) best[s.sid] = s;
+      });
+      Object.values(best).forEach(s => {
+        if (onList[s.sid] !== undefined && timeToSec(s.time) >= onList[s.sid] - 0.001) return;
+        const rk = rankOf(s.sid, ev, s.time); if (!rk) return;
+        const sw = R.swimmers[s.sid];
+        extra.push({ r: rk.rank, t: s.time, n: `${sw.first} ${sw.last}`, tm: 'Emory', d: `${+s.date.slice(5, 7)}/${+s.date.slice(8, 10)}/${s.date.slice(2, 4)}`, emory: true, newer: true, meet: s.meet });
+      });
+    }
+    return all.concat(extra).filter(r => _d3l.team ? (r.tm === _d3l.team || (r.newer && /^emory/i.test(_d3l.team))) : (!_d3l.top || r.r <= _d3l.top))
+      .sort((a, b) => timeToSec(a.t) - timeToSec(b.t) || (a.newer ? 1 : 0) - (b.newer ? 1 : 0));
+  };
+  const teams = {};
+  evs.forEach(ev => L.events[ev].forEach(r => { teams[r.tm] = (teams[r.tm] || 0) + 1; }));
   const teamList = Object.keys(teams).sort((a, b) => (/^emory/i.test(b) - /^emory/i.test(a)) || a.localeCompare(b));
-  const rows = all.concat(extra).filter(r => !_d3l.team || r.tm === _d3l.team || (r.newer && /^emory/i.test(_d3l.team)))
-    .sort((a, b) => timeToSec(a.t) - timeToSec(b.t) || (a.newer ? 1 : 0) - (b.newer ? 1 : 0));
+  if (_d3l.team && !teams[_d3l.team]) _d3l.team = '';
   const [y, m, dd] = L.date.split('-');
-  box.innerHTML = `<div class="card">${head}
-    <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:.6rem">
-      <select onchange="_d3l.ev=this.value;renderD3List()" style="width:auto">${evs.map(e => `<option ${e === _d3l.ev ? 'selected' : ''}>${e}</option>`).join('')}</select>
-      <select onchange="_d3l.team=this.value;renderD3List()" style="width:auto;max-width:220px"><option value="">All teams</option>${
-        teamList.map(t => `<option value="${esc(t)}" ${t === _d3l.team ? 'selected' : ''}>${esc(t)} (${teams[t]})</option>`).join('')}</select>
-      <label class="check-item" style="font-size:.75rem"><input type="checkbox" ${_d3l.newer ? 'checked' : ''} onchange="_d3l.newer=this.checked;renderD3List()"> Show Emory's newer swims</label>
-    </div>
-    <div style="font-size:.7rem;color:var(--text-dim);margin-bottom:.5rem;font-family:var(--fm)">USA Swimming report ${+m}/${+dd}/${y} · Emory rows colored by DIII rank: green ≤ ${D3_TIERS[g][0]}, yellow ≤ ${D3_TIERS[g][1]}, red after${_d3l.newer ? ' · <i>italic ~rank</i> = an Emory swim newer than the report, placed by its time' : ''}</div>
-    <div style="overflow-x:auto"><table class="tbl d3list"><thead><tr><th>Rank</th><th>Swimmer</th><th>Team</th><th style="text-align:right">Time</th><th>Date</th></tr></thead><tbody>${
-      rows.map(r => `<tr class="${r.emory ? 'd3row-' + d3Tier(g, r.r) : ''}"${r.newer ? ' style="font-style:italic"' : ''}>
-        <td class="tt-rank">${r.newer ? '~' : ''}${r.r}</td><td style="${r.emory ? 'font-weight:700' : ''}">${esc(r.n)}</td>
-        <td class="tt-meet">${esc(r.tm)}${r.newer ? ' · ' + esc(r.meet || '') : ''}</td><td class="ttime" style="text-align:right">${esc(r.t)}</td><td class="tt-meet">${esc(r.d || '')}</td></tr>`).join('')
-    }</tbody></table></div></div>`;
+  const cards = evs.map(ev => {
+    const rows = eventRows(ev);
+    return `<div class="card"><div class="ct" style="display:flex;justify-content:space-between"><span>${esc(ev)}</span><span>${rows.length}</span></div>${
+      rows.length ? `<table class="tbl d3list" data-ev="${esc(ev)}"><tbody>${rows.map(r => `<tr class="${r.emory ? 'd3row-' + d3Tier(g, r.r) : ''}"${r.newer ? ' style="font-style:italic"' : ''}>
+        <td class="tt-rank">${r.newer ? '~' : ''}${r.r}</td><td><div style="font-size:.8rem;${r.emory ? 'font-weight:700' : 'font-weight:600'}">${esc(r.n)}</div>
+          <div class="tt-meet">${esc(r.tm)}${r.newer ? ' · ' + esc(r.meet || '') : ''} · ${esc(r.d || '')}</div></td>
+        <td class="ttime" style="text-align:right;white-space:nowrap">${esc(r.t)}</td></tr>`).join('')}</tbody></table>`
+      : '<div style="color:var(--text-dim);font-size:.78rem">None</div>'}</div>`;
+  }).join('');
+  box.innerHTML = `<div class="card" style="grid-column:1/-1">
+      <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+        <select onchange="_d3l.team=this.value;renderD3List()" style="width:auto;max-width:240px"><option value="">All teams</option>${
+          teamList.map(t => `<option value="${esc(t)}" ${t === _d3l.team ? 'selected' : ''}>${esc(t)} (${teams[t]})</option>`).join('')}</select>
+        <select onchange="_d3l.top=+this.value;renderD3List()" style="width:auto" ${_d3l.team ? 'disabled title="A team shows all its swimmers"' : ''}>${
+          [[30, 'Top 30'], [50, 'Top 50'], [0, 'All']].map(([v, l]) => `<option value="${v}" ${v === _d3l.top ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <label class="check-item" style="font-size:.75rem"><input type="checkbox" ${_d3l.newer ? 'checked' : ''} onchange="_d3l.newer=this.checked;renderD3List()"> Show Emory's newer swims</label>
+      </div>
+      <div style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm)">USA Swimming report ${+m}/${+dd}/${y} · ${_d3l.team ? `all ${esc(_d3l.team)} swimmers on the lists` : (_d3l.top ? `top ${_d3l.top} per event` : 'full lists')} · Emory rows: green ≤ ${D3_TIERS[g][0]}, yellow ≤ ${D3_TIERS[g][1]}, red after${_d3l.newer ? ' · <i>italic ~rank</i> = an Emory swim newer than the report, placed by its time' : ''}</div>
+    </div>${cards}`;
 }
 
 let _recEdit = null;
