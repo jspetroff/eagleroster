@@ -3415,6 +3415,7 @@ function luToggleOut(sid) { const L = luCur(); if (!L) return; L.out = L.out || 
 function luType(el, key, ri, leg) {   // typed name → fill
   const sid = luFind(el.value, _lu.g);
   if (!sid) { el.style.borderColor = 'var(--red)'; el.title = 'No single swimmer matches — keep typing'; return; }
+  el.onchange = el.onkeydown = null;   // the box is about to be redrawn; don't let its blur fire a second change
   _lu.focus = luNextSpot(key, ri, leg);
   if (ri == null) luAdd(key, sid); else luRelayLeg(key, ri, leg, sid);
 }
@@ -3444,6 +3445,11 @@ function luDrop(ev, key, ri, leg) {
 }
 
 function renderLineup() {
+  if (_lu.busy) return; _lu.busy = true;
+  try { renderLineupNow(); } finally { _lu.busy = false; }
+  luRestoreFocus();
+}
+function renderLineupNow() {
   ensureState(); R.lineups = R.lineups || {};
   const box = document.getElementById('luBody'); if (!box) return;
   const list = Object.values(R.lineups).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -3536,7 +3542,6 @@ function renderLineup() {
         ${unplaced.length ? `<div style="font-size:.72rem;color:var(--gold);margin-bottom:.5rem">Not in any event yet: ${unplaced.length}</div>` : ''}
         <div style="font-size:.68rem;color:var(--text-dim);margin-bottom:.35rem">Drag a name onto an event, or click it and then the event's + button. "out" marks someone unavailable.</div>
         <div style="max-height:75vh;overflow-y:auto">${summary}</div></div></div>`;
-  luRestoreFocus();
 }
 
 function printLineup() {
