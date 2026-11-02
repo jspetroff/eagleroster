@@ -3286,6 +3286,25 @@ const LU_CODE = { '50 FS': '50', '100 FS': '100', '200 FS': '200', '500 FS': '50
 const LU_LIMIT = { total: 4, ind: 3, relay: 2 }, LU_RELAYS_SCORING = 2;
 const luKind = k => k === 'MR' || k === 'FR' ? 'relay' : /^D\d$/.test(k) ? 'dive' : 'ind';
 let _lu = { id: null, g: 'W', sel: null, drag: null };
+// distance choices per lineup: medley relay, free relay, distance free, IM, and (13 events only) 100s or 200s of stroke
+const LU_OPTS = { mr: [200, 400], fr: [200, 400, 800], dist: [1000, 1650], im: [200, 400], stroke: [100, 200] };
+const luOpt = (L, k) => +((L || {})[k] || (k === 'dist' ? 1000 : 200));
+function luEv(L, key) {   // the event actually swum in a slot
+  if (key === '1000 FS') return luOpt(L, 'dist') + ' FS';
+  if (key === '200 IM') return luOpt(L, 'im') + ' IM';
+  if (L && L.format === '13' && /^200 (FL|BK|BR)$/.test(key)) return luOpt(L, 'stroke') + key.slice(3);
+  return key;
+}
+function luLabel(L, key) {
+  if (key === 'MR') return luOpt(L, 'mr') + ' Medley Relay';
+  if (key === 'FR') return luOpt(L, 'fr') + ' Free Relay';
+  return LU_LABEL[key] || luEv(L, key);
+}
+function luCode(L, key) {
+  if (key === 'MR' || key === 'FR') { const d = luOpt(L, key === 'MR' ? 'mr' : 'fr'); return (d === 200 ? '' : d / 100) + key; }
+  const ev = luEv(L, key);
+  return LU_CODE[ev] || ({ '1650 FS': '1650', '400 IM': '4IM' })[ev] || ev;
+}
 
 function luCur() { ensureState(); R.lineups = R.lineups || {}; return R.lineups[_lu.id] || null; }
 function luSide(L, g) { L[g] = L[g] || {}; const s = L[g]; s.entries = s.entries || {}; s.manual = s.manual || {}; s.relays = s.relays || {}; s.divers = s.divers || {}; return s; }
@@ -3305,8 +3324,8 @@ function luSeed(sid, ev) {
   return t && t.lbt ? { time: t.lbt, sb: false } : null;
 }
 // relay leg time: lead-off = flat 50, others = best 50 split (else flat)
-function luLeg(sid, stroke, leg) {
-  const ev = '50 ' + stroke, season = seasonOf(new Date().toISOString().slice(0, 10));
+function luLeg(sid, stroke, leg, dist) {
+  const ev = (dist || 50) + ' ' + stroke, season = seasonOf(new Date().toISOString().slice(0, 10));
   let best = null;
   (R.swims || []).forEach(s => {
     if (s.sid !== sid || s.event !== ev || seasonOf(s.date) !== season) return;
@@ -3317,11 +3336,12 @@ function luLeg(sid, stroke, leg) {
   if (best == null && leg === 1) { const f = luSeed(sid, ev); if (f) best = timeToSec(f.time); }
   return best;
 }
-function luRelayTime(key, legs) {
+function luRelayTime(key, legs, L) {
+  L = L || luCur(); const d = luOpt(L, key === 'MR' ? 'mr' : 'fr') / 4;
   let t = 0;
   for (let i = 0; i < 4; i++) {
     if (!legs[i]) return null;
-    const x = luLeg(legs[i], key === 'MR' ? MEDLEY_LEGS[i] : 'FS', i + 1);
+    const x = luLeg(legs[i], key === 'MR' ? MEDLEY_LEGS[i] : 'FS', i + 1, d);
     if (x == null) return null; t += x;
   }
   return hy3Fmt(t);
@@ -3330,7 +3350,7 @@ function luRelayTime(key, legs) {
 function luOrdered(side, key) {
   const list = (side.entries[key] || []).slice();
   if (side.manual[key]) return list;
-  const sec = sid => { const s = luSeed(sid, key); return s ? timeToSec(s.time) : 1e9; };
+  const ev = luEv(luCur(), key), sec = sid => { const s = luSeed(sid, ev); return s ? timeToSec(s.time) : 1e9; };
   return list.sort((a, b) => sec(a) - sec(b));
 }
 // per-swimmer counts for the limits (every swim counts, exhibition included; diving doesn't)
@@ -3430,6 +3450,8 @@ function renderLineup() {
     <div><label>Opponent</label><input type="text" value="${esc(L.opp || '')}" onchange="luSet('opp',this.value.trim())" placeholder="Sewanee" style="width:180px"></div>
     <div><label>Date</label><input type="date" value="${esc(L.date || '')}" onchange="luSet('date',this.value)"></div>
     <div><label>Format</label><select onchange="luSet('format',this.value)">${sel(L.format, [['13', '13 events'], ['15', '15 events'], ['16', '16 events']])}</select></div>
+    ${[['mr', 'Medley relay'], ['fr', 'Free relay'], ['dist', 'Distance'], ['im', 'IM']].concat(L.format === '13' ? [['stroke', 'Stroke events']] : [])
+      .map(([k, l]) => `<div><label>${l}</label><select onchange="luSet('${k}',+this.value)">${sel(luOpt(L, k), LU_OPTS[k].map(v => [v, k === 'stroke' ? v + 's' : v]))}</select></div>`).join('')}
     <div><label>Pool</label><select onchange="luSet('lanes',+this.value)">${sel(L.lanes, [[6, '6 lanes'], [8, '8 lanes'], [10, '10 lanes']])}</select></div>
     <div><label>Meet</label><div style="display:flex;gap:.7rem;align-items:center;height:34px">${[['home', 'Home'], ['away', 'Away']].map(([k, l]) => `<label class="check-item" style="font-size:.8rem;margin:0"><input type="radio" name="luVenue" ${(L.venue || 'home') === k ? 'checked' : ''} onchange="luSet('venue','${k}')"> ${l}</label>`).join('')}</div></div>
     <div><label>Our lanes</label><select onchange="luSet('side',this.value)">${sel(L.side, [['even', 'Evens'], ['odd', 'Odds']])}</select></div>
@@ -3444,12 +3466,12 @@ function renderLineup() {
   const oppLine = key => { const o = opp[key]; return o ? `<span class="tt-meet" style="margin-left:.5rem">${esc(L.opp || 'Opp')}: ${o.n != null ? o.n + ' · ' : ''}${(o.times || []).map(esc).join(', ')}</span>` : ''; };
 
   const events = LU_FORMATS[L.format].map(key => {
-    const k = luKind(key), label = LU_LABEL[key] || key;
+    const k = luKind(key), label = luLabel(L, key);
     let body = '';
     if (k === 'ind') {
       const order = luOrdered(side, key);
       body = order.map((sid, i) => {
-        const heat = Math.floor(i / per) + 1, lane = lanes[i % per], seed = luSeed(sid, key);
+        const heat = Math.floor(i / per) + 1, lane = lanes[i % per], seed = luSeed(sid, luEv(L, key));
         return `<div class="imp-row" data-idx="${i}" ${dragAttrs(sid, { key })} ${dropAttrs(key)} style="cursor:grab${heat > 1 ? ';opacity:.75' : ''}">
           <span style="font-family:var(--fm);font-size:.7rem;width:4.2rem">${heat === 1 ? 'L' + lane : 'Ex H' + heat + ' L' + lane}</span>
           <span style="flex:1"${warn(sid)}>${esc(luName(sid))}</span>
@@ -3484,7 +3506,7 @@ function renderLineup() {
   const pool = luPool(g);
   const summary = pool.map((s, i) => {
     const c = counts[s.id], isOut = out[s.id];
-    const codes = c ? c.codes.map(k => LU_CODE[k]).concat(c.dive.length ? ['DIVE'] : []).join(', ') : '';
+    const codes = c ? c.codes.map(k => luCode(L, k)).concat(c.dive.length ? ['DIVE'] : []).join(', ') : '';
     return `<div class="imp-row" ${dragAttrs(s.id)} onclick="luPick('${s.id}')" style="cursor:pointer;${_lu.sel === s.id ? 'background:rgba(212,175,55,.15);' : ''}${isOut ? 'opacity:.45;' : ''}">
       <span style="font-family:var(--fm);font-size:.68rem;width:1.6rem;color:var(--text-dim)">${i + 1}</span>
       <span style="flex:1;font-size:.8rem${c && c.over ? ';color:var(--red);font-weight:700' : ''}">${esc(s.first)} ${esc(s.last)} ${classBadge(s)}</span>
@@ -3511,15 +3533,15 @@ function printLineup() {
     const ev = LU_FORMATS[L.format].map(key => {
       const k = luKind(key), o = opp[key];
       let rows = '';
-      if (k === 'ind') rows = luOrdered(side, key).map((sid, i) => { const s = luSeed(sid, key), h = Math.floor(i / per) + 1;
+      if (k === 'ind') rows = luOrdered(side, key).map((sid, i) => { const s = luSeed(sid, luEv(L, key)), h = Math.floor(i / per) + 1;
         return `<tr><td class="r">${h === 1 ? 'L' + lanes[i % per] : 'Ex ' + lanes[i % per]}</td><td class="n">${esc(luName(sid))}</td><td class="r">${s ? esc(s.time) : ''}</td></tr>`; }).join('');
       if (k === 'relay') rows = (side.relays[key] || []).map((legs, ri) => `<tr><td class="r">${String.fromCharCode(65 + ri)}${ri < LU_RELAYS_SCORING ? '' : ' ex'}</td><td class="n" style="white-space:normal">${legs.map(s => s ? esc(luShort(s)) : '—').join(', ')}</td><td class="r">${luRelayTime(key, legs) || ''}</td></tr>`).join('');
       if (k === 'dive') rows = (side.divers[key] || []).map(sid => `<tr><td></td><td class="n">${esc(luName(sid))}</td><td></td></tr>`).join('');
-      return `<table class="pt lu"><colgroup><col style="width:34px"><col><col style="width:56px"></colgroup><tr><th colspan="3">${esc(LU_LABEL[key] || key)}${o ? ` <span class="pc">${esc(L.opp || 'Opp')}: ${o.n != null ? o.n + ' · ' : ''}${(o.times || []).map(esc).join(', ')}</span>` : ''}</th></tr>${rows}</table>`;
+      return `<table class="pt lu"><colgroup><col style="width:34px"><col><col style="width:56px"></colgroup><tr><th colspan="3">${esc(luLabel(L, key))}${o ? ` <span class="pc">${esc(L.opp || 'Opp')}: ${o.n != null ? o.n + ' · ' : ''}${(o.times || []).map(esc).join(', ')}</span>` : ''}</th></tr>${rows}</table>`;
     }).join('');
     const pool = luPool(g);
     const list = `<table class="pt lu lue"><colgroup><col style="width:20px"><col><col style="width:42%"></colgroup><tr><th colspan="3">${g === 'W' ? 'Women' : 'Men'} — entries</th></tr>${pool.map((s, i) => { const c = counts[s.id];
-      return `<tr><td class="r">${i + 1}</td><td class="n">${esc(s.first + ' ' + s.last)}</td><td>${(L.out || {})[s.id] ? 'OUT' : c ? c.codes.map(k => LU_CODE[k]).concat(c.dive.length ? ['DIVE'] : []).join(', ') + (c.over ? ' !' : '') : ''}</td></tr>`; }).join('')}</table>`;
+      return `<tr><td class="r">${i + 1}</td><td class="n">${esc(s.first + ' ' + s.last)}</td><td>${(L.out || {})[s.id] ? 'OUT' : c ? c.codes.map(k => luCode(L, k)).concat(c.dive.length ? ['DIVE'] : []).join(', ') + (c.over ? ' !' : '') : ''}</td></tr>`; }).join('')}</table>`;
     return `<div class="ttpack"><div class="ph"><b>${(L.venue || 'home') === 'away' ? `Emory at ${esc(L.opp || 'Opponent')}` : `${esc(L.opp || 'Opponent')} at Emory`} (${g === 'W' ? 'Women' : 'Men'}) — ${esc(L.date || '')}</b> &nbsp;${L.lanes} lanes, ${L.side === 'odd' ? 'odds' : 'evens'} · L = lane in the scoring heat, Ex = exhibition · ! = over the entry limit</div>
       <div style="display:grid;grid-template-columns:3fr 2fr;gap:12px"><div>${ev}</div><div>${list}</div></div></div>`;
   };
