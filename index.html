@@ -3364,7 +3364,7 @@ function luFind(text, g) {   // typed name → swimmer id
 function luNew() {
   ensureState(); R.lineups = R.lineups || {};
   const id = 'lu' + Date.now().toString(36);
-  R.lineups[id] = { id, opp: '', date: new Date().toISOString().slice(0, 10), format: '16', lanes: 10, side: 'even', out: {} };
+  R.lineups[id] = { id, opp: '', date: new Date().toISOString().slice(0, 10), format: '16', lanes: 10, side: 'even', venue: 'home', out: {} };
   _lu.id = id; save(); renderLineup();
 }
 function luSet(k, v) { const L = luCur(); if (!L) return; L[k] = v; save(); renderLineup(); }
@@ -3419,7 +3419,7 @@ function renderLineup() {
   const L = luCur();
   const pick = `<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
     <select onchange="_lu.id=this.value;renderLineup()" style="width:auto;min-width:220px">${list.length ? '' : '<option>No lineups yet</option>'}${
-      list.map(l => `<option value="${l.id}" ${l.id === _lu.id ? 'selected' : ''}>${esc(l.date || '')} · ${esc(l.opp || 'Untitled')}</option>`).join('')}</select>
+      list.map(l => `<option value="${l.id}" ${l.id === _lu.id ? 'selected' : ''}>${esc(l.date || '')} · ${(l.venue || 'home') === 'away' ? '@ ' : 'vs '}${esc(l.opp || 'Untitled')}</option>`).join('')}</select>
     <button class="btn bsm bprimary" onclick="luNew()">+ New lineup</button>
     ${L ? `<button class="btn bsm" onclick="printLineup()">&#128424; Print</button><button class="btn bsm bdanger" onclick="luDelete()">Delete</button>` : ''}</div>`;
   if (!L) { box.innerHTML = pick + '<div style="color:var(--text-dim);font-size:.85rem">Create a lineup to start.</div>'; return; }
@@ -3431,6 +3431,7 @@ function renderLineup() {
     <div><label>Date</label><input type="date" value="${esc(L.date || '')}" onchange="luSet('date',this.value)"></div>
     <div><label>Format</label><select onchange="luSet('format',this.value)">${sel(L.format, [['13', '13 events'], ['15', '15 events'], ['16', '16 events']])}</select></div>
     <div><label>Pool</label><select onchange="luSet('lanes',+this.value)">${sel(L.lanes, [[6, '6 lanes'], [8, '8 lanes'], [10, '10 lanes']])}</select></div>
+    <div><label>Meet</label><div style="display:flex;gap:.7rem;align-items:center;height:34px">${[['home', 'Home'], ['away', 'Away']].map(([k, l]) => `<label class="check-item" style="font-size:.8rem;margin:0"><input type="radio" name="luVenue" ${(L.venue || 'home') === k ? 'checked' : ''} onchange="luSet('venue','${k}')"> ${l}</label>`).join('')}</div></div>
     <div><label>Our lanes</label><select onchange="luSet('side',this.value)">${sel(L.side, [['even', 'Evens'], ['odd', 'Odds']])}</select></div>
     <div class="fbar" style="margin:0"><div class="fpill ${g === 'W' ? 'act' : ''}" onclick="_lu.g='W';_lu.sel=null;renderLineup()">Women</div><div class="fpill ${g === 'M' ? 'act' : ''}" onclick="_lu.g='M';_lu.sel=null;renderLineup()">Men</div></div>
   </div><div style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm)">Lanes ${lanes.join(', ')} (middle out) · first ${per} in an event = scoring heat, the rest exhibition · first ${LU_RELAYS_SCORING} relays score · limits per swimmer: ${LU_LIMIT.total} events, ${LU_LIMIT.ind} individual, ${LU_LIMIT.relay} relays</div></div>`;
@@ -3519,7 +3520,7 @@ function printLineup() {
     const pool = luPool(g);
     const list = `<table class="pt lu lue"><colgroup><col style="width:20px"><col><col style="width:42%"></colgroup><tr><th colspan="3">${g === 'W' ? 'Women' : 'Men'} — entries</th></tr>${pool.map((s, i) => { const c = counts[s.id];
       return `<tr><td class="r">${i + 1}</td><td class="n">${esc(s.first + ' ' + s.last)}</td><td>${(L.out || {})[s.id] ? 'OUT' : c ? c.codes.map(k => LU_CODE[k]).concat(c.dive.length ? ['DIVE'] : []).join(', ') + (c.over ? ' !' : '') : ''}</td></tr>`; }).join('')}</table>`;
-    return `<div class="ttpack"><div class="ph"><b>${esc(L.opp || 'Opponent')} vs. Emory (${g === 'W' ? 'Women' : 'Men'}) — ${esc(L.date || '')}</b> &nbsp;${L.lanes} lanes, ${L.side === 'odd' ? 'odds' : 'evens'} · L = lane in the scoring heat, Ex = exhibition · ! = over the entry limit</div>
+    return `<div class="ttpack"><div class="ph"><b>${(L.venue || 'home') === 'away' ? `Emory at ${esc(L.opp || 'Opponent')}` : `${esc(L.opp || 'Opponent')} at Emory`} (${g === 'W' ? 'Women' : 'Men'}) — ${esc(L.date || '')}</b> &nbsp;${L.lanes} lanes, ${L.side === 'odd' ? 'odds' : 'evens'} · L = lane in the scoring heat, Ex = exhibition · ! = over the entry limit</div>
       <div style="display:grid;grid-template-columns:3fr 2fr;gap:12px"><div>${ev}</div><div>${list}</div></div></div>`;
   };
   document.getElementById('luPrint').innerHTML = half('W') + half('M');
