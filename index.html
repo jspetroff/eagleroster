@@ -226,7 +226,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   body.ptags #tagPrint .rtag{box-shadow:none;outline:.5px dashed #999;margin-bottom:0;break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .code-print{display:inline!important;font-family:var(--fm);font-weight:700;}
   .content{padding:0;max-width:none;}
-  #ttList,#recList,#recBanner,#recHelp,#stdList,#stdNote{display:none!important;}
+  #ttList,#stdBanner,#stdList,#stdNote{display:none!important;}
   table.pt.st{font-size:9.5px;margin-bottom:10px;} table.pt.st td{padding:2px 4px;} table.pt.st td.n{width:auto;max-width:none;white-space:normal;}
   table.pt.rt{font-size:10px;margin-bottom:10px;} table.pt.rt th{font-size:11px;} table.pt.rt td{padding:2px 4px;}
   table.pt.rt td.rl{width:28%;} table.pt.rt td.n{width:40%;max-width:none;white-space:normal;}
@@ -308,10 +308,9 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div class="tab" onclick="switchTab('reports',this)">03 · Reports</div>
   <div class="tab" onclick="switchTab('relays',this)">04 · Relays</div>
   <div class="tab" onclick="switchTab('toptimes',this)">05 · Top Times</div>
-  <div class="tab" onclick="switchTab('records',this)">06 · Records</div>
-  <div class="tab" onclick="switchTab('standards',this)">07 · Standards</div>
-  <div class="tab" onclick="switchTab('tags',this)">08 · Tags</div>
-  <div class="tab" onclick="switchTab('lessons',this)">09 · Lessons</div>
+  <div class="tab" onclick="switchTab('standards',this)">06 · Standards</div>
+  <div class="tab" onclick="switchTab('tags',this)">07 · Tags</div>
+  <div class="tab" onclick="switchTab('lessons',this)">08 · Lessons</div>
 </div>
 
 <!-- ═══════════════════════════════════ TAB 1: ROSTER ═══════════════════════════════════ -->
@@ -485,23 +484,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
   <div class="cgrid" id="relayGrid"></div>
 </div>
 
-<!-- ═══════════════════════════════════ TAB 6: RECORDS ═══════════════════════════════════ -->
-<div id="tab-records" class="tp content">
-  <div class="sec-hdr">
-    <h3>Team Records</h3>
-    <button class="btn bsm" onclick="printRecords()">&#128424; Print</button>
-  </div>
-  <div class="fbar">
-    <div class="fpill act" onclick="setRecG('W',this)">Women</div>
-    <div class="fpill" onclick="setRecG('M',this)">Men</div>
-  </div>
-  <div id="recBanner"></div>
-  <div id="recHelp" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)">Individual swimming records are checked after every import; you approve each new one. Diving and relay records are updated with Edit.</div>
-  <div class="cgrid" id="recList" style="grid-template-columns:1fr"></div>
-  <div id="recPrint" class="print-only"></div>
-</div>
-
-<!-- ═══════════════════════════════════ TAB 7: STANDARDS ═══════════════════════════════════ -->
+<!-- ═══════════════════════════════════ TAB 6: STANDARDS ═══════════════════════════════════ -->
 <div id="tab-standards" class="tp content">
   <div class="sec-hdr">
     <h3>NCAA Standards &amp; Records</h3>
@@ -511,6 +494,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div class="fpill act" onclick="setStdG('W',this)">Women</div>
     <div class="fpill" onclick="setStdG('M',this)">Men</div>
   </div>
+  <div id="stdBanner"></div>
   <div id="stdNote" style="font-size:.72rem;color:var(--text-dim);margin-bottom:1rem;font-family:var(--fm)"></div>
   <div id="stdList"></div>
   <div id="stdPrint" class="print-only"></div>
@@ -878,7 +862,6 @@ function switchTab(id, el) {
   if (id==='relays') renderRelays();
   if (id==='reports') renderReportEvents();
   if (id==='toptimes') renderTopTimes();
-  if (id==='records') renderRecords();
   if (id==='standards') renderStandards();
   if (id==='tags') renderTags();
   if (id==='lessons') renderLessons();
@@ -2974,28 +2957,8 @@ function closeRecordApprovals() { document.getElementById('recApproveModal').cla
 
 // ── Records tab ──
 let _recG = 'W';
-function setRecG(g, el) { _recG = g; el.parentNode.querySelectorAll('.fpill').forEach(p => p.classList.remove('act')); el.classList.add('act'); renderRecords(); }
-function renderRecordsIfOpen() { if (document.getElementById('tab-records').classList.contains('act')) renderRecords(); }
+function renderRecordsIfOpen() { const t = document.getElementById('tab-standards'); if (t && t.classList.contains('act')) renderStandards(); }
 
-function renderRecords() {
-  ensureState();
-  const cands = recordCandidates();
-  document.getElementById('recBanner').innerHTML = cands.length
-    ? `<div class="st stinfo" style="display:flex;justify-content:space-between;align-items:center">${cands.length} possible new record${cands.length > 1 ? 's' : ''} waiting for approval <button class="btn bsm bprimary" onclick="showRecordApprovals()">Review</button></div>` : '';
-  const recs = (R.records || []).filter(r => r.g === _recG);
-  const section = (type, title) => {
-    const rows = recs.filter(r => r.type === type);
-    return `<div class="card"><div class="ct">${title}</div><table class="tbl"><tbody>${rows.map(r => {
-      const i = R.records.indexOf(r), prev = (r.hist || [])[0];
-      return `<tr><td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(recLabel(r))}</td>
-        <td class="ttime" style="white-space:nowrap">${esc(r.time)}${r.swimId && seasonOf(r.date) === seasonOf(new Date().toISOString().slice(0,10)) ? '<span class="badge vrb">NEW</span>' : ''}</td>
-        <td style="font-size:.8rem">${esc(r.who)}${prev ? `<div class="tt-meet">prev ${esc(prev.time)} ${esc(prev.who)} (${prev.date ? prev.date.slice(0,4) : ''})</div>` : ''}</td>
-        <td class="tt-meet" style="white-space:nowrap">${recFmtDate(r.date)}</td><td class="tt-meet">${esc(r.meet)}</td>
-        <td style="text-align:right"><button class="btn bsm" onclick="openRecordEdit(${i})">Edit</button></td></tr>`;
-    }).join('')}</tbody></table></div>`;
-  };
-  document.getElementById('recList').innerHTML = section('swim', 'Individual') + section('dive', 'Diving') + section('relay', 'Relays');
-}
 
 // ── Standards tab: NCAA cuts, prior-year finals cuts, NCAA DIII records and Emory records side by side ──
 let _stdG = 'W';
@@ -3012,43 +2975,63 @@ function stdData(g) {
     yr: ref.finalsYear || '',
     swim: STD_EVENTS.map(ev => { const s = (NCAA_STD[g] || {})[ev] || []; return { ev, A: s[0] || '', B: s[1] || '', Q: s[2] || '',
       aF: refFor(aF, g, ev), bF: refFor(bF, g, ev), n: nrec(ev), e: erec(ev), ncaaEv: !!s.length }; }),
-    relay: STD_RELAYS.map(ev => ({ ev, n: nrec(ev), e: erec(ev) }))
+    relay: STD_RELAYS.map(ev => ({ ev, n: nrec(ev), e: erec(ev) })),
+    dive: (R.records || []).filter(r => r.g === g && r.type === 'dive')
   };
 }
 const stdYear = r => r && r.date ? r.date.slice(0, 4) : '';
 
 function renderStandards() {
   const g = _stdG, d = stdData(g), dash = '<span style="color:var(--text-dim)">—</span>';
-  const recCell = (r, team) => r ? `<td class="ttime" style="white-space:nowrap;font-weight:700">${esc(r.time)}</td>
-      <td style="font-size:.78rem">${esc(r.who)}<div class="tt-meet">${team && r.team ? esc(r.team) + ' · ' : ''}${stdYear(r)}</div></td>` : `<td>${dash}</td><td></td>`;
-  const edit = r => r ? `<button class="btn bsm" onclick="openRecordEdit(${R.ncaaRecords.indexOf(r)},'ncaa')">Edit</button>` : '';
+  // pending record approvals (Emory and DIII), checked after every import
+  const cands = recordCandidates();
+  document.getElementById('stdBanner').innerHTML = cands.length
+    ? `<div class="st stinfo" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">${cands.length} possible new record${cands.length > 1 ? 's' : ''} waiting for approval <button class="btn bsm bprimary" onclick="showRecordApprovals()">Review</button></div>` : '';
+  const thisSeason = seasonOf(new Date().toISOString().slice(0, 10));
+  const diii = r => r ? `<td class="ttime" style="white-space:nowrap;font-weight:700">${esc(r.time)}</td>
+      <td style="font-size:.78rem">${esc(r.who)}<div class="tt-meet">${r.team ? esc(r.team) + ' · ' : ''}${stdYear(r)}</div></td>` : `<td>${dash}</td><td></td>`;
+  const emory = r => {
+    if (!r) return `<td>${dash}</td><td></td>`;
+    const prev = (r.hist || [])[0];
+    return `<td class="ttime" style="white-space:nowrap;font-weight:700">${esc(r.time)}${r.swimId && seasonOf(r.date) === thisSeason ? '<span class="badge vrb">NEW</span>' : ''}</td>
+      <td style="font-size:.78rem">${esc(r.who)}<div class="tt-meet">${recFmtDate(r.date)}${r.meet ? ' · ' + esc(r.meet) : ''}</div>${
+        prev ? `<div class="tt-meet">prev ${esc(prev.time)} ${esc(prev.who)}${prev.date ? ' (' + prev.date.slice(0, 4) + ')' : ''}</div>` : ''}</td>`;
+  };
+  const edits = (n, e) => `<td style="text-align:right;white-space:nowrap">${
+    n ? `<button class="btn bsm" onclick="openRecordEdit(${R.ncaaRecords.indexOf(n)},'ncaa')">Edit DIII</button>` : ''}${
+    e ? ` <button class="btn bsm" onclick="openRecordEdit(${R.records.indexOf(e)})">Edit Emory</button>` : ''}</td>`;
   const t = v => v ? `<td class="ttime">${esc(v)}</td>` : `<td>${dash}</td>`;
   const yr = d.yr ? `'${String(d.yr).slice(2)} ` : '';
   document.getElementById('stdList').innerHTML =
     `<div class="card" style="overflow-x:auto"><div class="ct">Individual — ${g === 'W' ? 'Women' : 'Men'}</div><table class="tbl"><thead><tr>
       <th>Event</th><th>NCAA A</th><th>NCAA B</th><th>'26 Invite</th><th>${yr}A Final</th><th>${yr}B Final</th><th colspan="2">NCAA DIII record</th><th colspan="2">Emory record</th><th></th></tr></thead><tbody>${
       d.swim.map(r => `<tr${r.ncaaEv ? '' : ' style="opacity:.6" title="Not swum at NCAAs"'}><td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(r.ev)}</td>
-        ${t(r.A)}${t(r.B)}${t(r.Q)}${t(r.aF)}${t(r.bF)}${recCell(r.n, true)}${recCell(r.e, false)}<td style="text-align:right">${edit(r.n)}</td></tr>`).join('')
+        ${t(r.A)}${t(r.B)}${t(r.Q)}${t(r.aF)}${t(r.bF)}${diii(r.n)}${emory(r.e)}${edits(r.n, r.e)}</tr>`).join('')
     }</tbody></table></div>
     <div class="card" style="overflow-x:auto"><div class="ct">Relays</div><table class="tbl"><thead><tr><th>Event</th><th colspan="2">NCAA DIII record</th><th colspan="2">Emory record</th><th></th></tr></thead><tbody>${
-      d.relay.map(r => `<tr><td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(r.ev)}</td>${recCell(r.n, true)}${recCell(r.e, false)}<td style="text-align:right">${edit(r.n)}</td></tr>`).join('')
-    }</tbody></table></div>`;
+      d.relay.map(r => `<tr><td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(r.ev)}</td>${diii(r.n)}${emory(r.e)}${edits(r.n, r.e)}</tr>`).join('')
+    }</tbody></table></div>
+    ${d.dive.length ? `<div class="card" style="overflow-x:auto"><div class="ct">Diving — Emory records</div><table class="tbl"><tbody>${
+      d.dive.map(r => `<tr><td style="font-weight:600;font-size:.8rem;white-space:nowrap">${esc(recLabel(r))}</td>${emory(r)}${edits(null, r)}</tr>`).join('')
+    }</tbody></table></div>` : ''}`;
   document.getElementById('stdNote').textContent = `NCAA A/B = 2027 qualifying standards · '26 Invite = 2026 invited time · ` +
     (d.yr ? `${d.yr} A/B Final = 8th / 16th place in NCAA prelims (from the results file on Reports)` : 'A/B Final cuts: load an NCAA results file on the Reports tab') +
-    ` · DIII records as of ${NCAA_REC_ASOF}, updated when you approve or edit one.`;
+    ` · DIII records as of ${NCAA_REC_ASOF}. Individual swimming records (Emory and DIII) are checked after every import and you approve each new one; diving and relay records are updated with Edit.`;
 }
 
 function printStandards() {
   renderStandards();
   const g = _stdG, d = stdData(g), yr = d.yr ? `'${String(d.yr).slice(2)} ` : '';
-  const rc = (r, team) => r ? `<td class="r"><b>${esc(r.time)}</b></td><td class="n">${esc(r.who)}${team && r.team ? ', ' + esc(r.team) : ''} <span class="pc">${stdYear(r)}</span></td>` : '<td></td><td></td>';
+  const rc = r => r ? `<td class="r"><b>${esc(r.time)}</b></td><td class="n">${esc(r.who)}${r.team ? ', ' + esc(r.team) : ''} <span class="pc">${stdYear(r)}</span></td>` : '<td></td><td></td>';
+  const re = r => r ? `<td class="r"><b>${esc(r.time)}</b></td><td class="n">${esc(r.who)} <span class="pc">${recFmtDate(r.date)}${r.meet ? ' ' + esc(r.meet) : ''}</span></td>` : '<td></td><td></td>';
   document.getElementById('stdPrint').innerHTML =
     `<div class="ph"><b>NCAA DIII Standards &amp; Records — ${g === 'W' ? 'Women' : 'Men'}</b> &nbsp;printed ${new Date().toLocaleDateString()}</div>
      <div class="pm">${esc(document.getElementById('stdNote').textContent)}</div>
      <table class="pt st"><tr><th>Event</th><th class="r">NCAA A</th><th class="r">NCAA B</th><th class="r">'26 Inv</th><th class="r">${yr}A Fin</th><th class="r">${yr}B Fin</th><th colspan="2">NCAA DIII record</th><th colspan="2">Emory record</th></tr>${
-      d.swim.map(r => `<tr><td><b>${esc(r.ev)}</b></td>${[r.A, r.B, r.Q, r.aF, r.bF].map(v => `<td class="r">${esc(v)}</td>`).join('')}${rc(r.n, true)}${rc(r.e, false)}</tr>`).join('')}</table>
+      d.swim.map(r => `<tr><td><b>${esc(r.ev)}</b></td>${[r.A, r.B, r.Q, r.aF, r.bF].map(v => `<td class="r">${esc(v)}</td>`).join('')}${rc(r.n)}${re(r.e)}</tr>`).join('')}</table>
      <table class="pt st"><tr><th>Relay</th><th colspan="2">NCAA DIII record</th><th colspan="2">Emory record</th></tr>${
-      d.relay.map(r => `<tr><td><b>${esc(r.ev)}</b></td>${rc(r.n, true)}${rc(r.e, false)}</tr>`).join('')}</table>`;
+      d.relay.map(r => `<tr><td><b>${esc(r.ev)}</b></td>${rc(r.n)}${re(r.e)}</tr>`).join('')}</table>
+     ${d.dive.length ? `<table class="pt st"><tr><th>Diving</th><th colspan="2">Emory record</th></tr>${d.dive.map(r => `<tr><td><b>${esc(recLabel(r))}</b></td>${re(r)}</tr>`).join('')}</table>` : ''}`;
   window.print();
 }
 
@@ -3153,19 +3136,8 @@ function saveRecordEdit() {
   Object.assign(r, { time: v('recTime'), who: v('recWho'), date: v('recDate'), meet: v('recMeet') }, which === 'ncaa' ? { team: v('recTeam') } : {});
   document.getElementById('recEditModal').classList.remove('open');
   save(); renderRecordsIfOpen();
-  if (document.getElementById('tab-standards').classList.contains('act')) renderStandards();
 }
 
-function printRecords() {
-  renderRecords();
-  const recs = (R.records || []).filter(r => r.g === _recG);
-  const tbl = (type, title) => `<table class="pt rt"><tr><th colspan="4">${title}</th></tr>${recs.filter(r => r.type === type).map(r =>
-    `<tr><td class="rl">${esc(recLabel(r))}</td><td class="r"><b>${esc(r.time)}</b></td><td class="n">${esc(r.who)}</td><td>${recFmtDate(r.date)} ${esc(r.meet)}</td></tr>`).join('')}</table>`;
-  document.getElementById('recPrint').innerHTML =
-    `<div class="ph"><b>Emory ${_recG === 'W' ? "Women's" : "Men's"} Swimming &amp; Diving Records</b> &nbsp;printed ${new Date().toLocaleDateString()}</div>
-     ${tbl('swim', 'Individual')}${tbl('dive', 'Diving')}${tbl('relay', 'Relays')}`;
-  window.print();
-}
 
 // ── LESSONS (private lessons ledger, read live from the Google Sheet) ─────
 // Instructors fill in their own sheets; the Master workbook totals them. This tab only reads it (read-only
