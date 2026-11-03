@@ -3432,6 +3432,14 @@ function luAddRelay(key) { const L = luCur(); if (!L) return; const side = luSid
 function luRelayLeg(key, ri, leg, sid) { const L = luCur(); if (!L) return; const r = luSide(L, _lu.g).relays[key][ri]; r[leg] = sid || null; save(); renderLineup(); }
 function luRelayDel(key, ri) { const L = luCur(); if (!L) return; luSide(L, _lu.g).relays[key].splice(ri, 1); save(); renderLineup(); }
 function luRelayMove(key, ri, dir) { const L = luCur(); if (!L) return; const a = luSide(L, _lu.g).relays[key], j = ri + dir; if (j < 0 || j >= a.length) return; [a[ri], a[j]] = [a[j], a[ri]]; save(); renderLineup(); }
+function luOpp(key, field, v) {
+  const L = luCur(); if (!L) return;
+  const g = _lu.g, all = (L.opp_info = L.opp_info || {}), side = (all[g] = all[g] || {}), o = (side[key] = side[key] || {});
+  if (field === 'n') { const n = parseInt(v, 10); if (v === '' || isNaN(n)) delete o.n; else o.n = Math.max(0, n); }
+  else { const t = String(v).split(/[,;\s]+/).map(x => x.trim()).filter(Boolean); if (t.length) o.times = t; else delete o.times; }
+  if (o.n == null && !o.times) delete side[key];
+  save(); renderLineup();
+}
 function luToggleOut(sid) { const L = luCur(); if (!L) return; L.out = L.out || {}; if (L.out[sid]) delete L.out[sid]; else L.out[sid] = true; save(); renderLineup(); }
 // letter of the other relay in this event a swimmer is already on (a swimmer can't be on two relays of the same event)
 function luOnRelay(key, sid, ri, leg) {
@@ -3459,7 +3467,7 @@ function luNextSpot(key, ri, leg) {
 function luRestoreFocus() {
   const f = _lu.focus; _lu.focus = null; if (!f) return;
   const el = [...document.querySelectorAll('#luBody [data-lf]')].find(e => e.dataset.lf === f);
-  if (el) el.focus({ preventScroll: true });
+  if (el) { el.focus({ preventScroll: true }); el.scrollIntoView({ block: 'nearest' }); }
 }
 // tap/click: pick a swimmer in the pool, then click an event's "+" to place them
 function luPick(sid) { _lu.sel = _lu.sel === sid ? null : sid; renderLineup(); }
@@ -3519,7 +3527,18 @@ function renderLineupNow() {
   const dropAttrs = (key, ri, leg) => `ondragover="event.preventDefault()" ondrop="luDrop(event,'${key}',${ri == null ? 'null' : ri},${leg == null ? 'null' : leg})"`;
   const warn = sid => counts[sid] && counts[sid].over ? ' style="color:var(--red);font-weight:700" title="Over the entry limit"' : '';
   const placeBtn = key => _lu.sel ? `<button class="btn bsm" onclick="luAdd('${key}','${_lu.sel}')" title="Place ${esc(luName(_lu.sel))}">+ ${esc(luShort(_lu.sel))}</button>` : '';
-  const oppLine = key => { const o = opp[key]; return o ? `<span class="tt-meet" style="margin-left:.5rem">${esc(L.opp || 'Opp')}: ${o.n != null ? o.n + ' · ' : ''}${(o.times || []).map(esc).join(', ')}</span>` : ''; };
+  // opponent: how many swimmers they have in the event and their times, typed in (Tab: count → times → next event's count)
+  const oppKeys = LU_FORMATS[L.format].filter(k => luKind(k) !== 'dive');
+  const tabNext = `onkeydown="if(event.key==='Tab'&&!event.shiftKey){event.preventDefault();_lu.focus=this.dataset.next;this.onchange?this.onchange():0;if(_lu.focus){luRestoreFocus()}}"`;
+  const oppLine = key => {
+    if (luKind(key) === 'dive') return '';
+    const o = opp[key] || {}, nx = oppKeys[oppKeys.indexOf(key) + 1];
+    return `<div style="display:flex;gap:.4rem;align-items:center;margin:-.2rem 0 .45rem;font-size:.75rem">
+      <span style="color:var(--text-dim);white-space:nowrap">${esc(L.opp || 'Opponent')}</span>
+      <input type="number" min="0" data-lf="${key}|on" data-next="${key}|ot" value="${o.n != null ? o.n : ''}" placeholder="#" title="How many swimmers they have in this event" style="width:3.4rem;padding:.25rem .4rem" onchange="luOpp('${key}','n',this.value)" ${tabNext}>
+      <input type="text" data-lf="${key}|ot" data-next="${nx ? nx + '|on' : ''}" value="${esc((o.times || []).join(', '))}" placeholder="their times, e.g. 1:59.3, 2:00.2" style="flex:1;padding:.25rem .5rem" onchange="luOpp('${key}','times',this.value)" ${tabNext}>
+    </div>`;
+  };
 
   const events = LU_FORMATS[L.format].map(key => {
     const k = luKind(key), label = luLabel(L, key);
@@ -3555,7 +3574,7 @@ function renderLineupNow() {
       body = dv.map(sid => `<div class="imp-row"><span style="flex:1">${esc(luName(sid))}</span><button class="btn bsm" onclick="luRemove('${key}','${sid}')">&#x2715;</button></div>`).join('') +
         `<div style="display:flex;gap:.4rem;margin-top:.35rem"><input list="luNames" data-lf="${key}|in" placeholder="Type a diver…" onkeydown="if((event.key==='Tab'&&!event.shiftKey||event.key==='Enter')&&this.value.trim()){event.preventDefault();this.onchange()}" style="flex:1" onchange="luType(this,'${key}')">${placeBtn(key)}</div>`;
     }
-    return `<div class="card" style="margin-bottom:.6rem" ${k !== 'relay' ? dropAttrs(key) : ''}><div class="ct">${esc(label)}${oppLine(key)}</div>${body}</div>`;
+    return `<div class="card" style="margin-bottom:.6rem" ${k !== 'relay' ? dropAttrs(key) : ''}><div class="ct">${esc(label)}</div>${oppLine(key)}${body}</div>`;
   }).join('');
 
   // right: every swimmer with their events (like the spreadsheet), unplaced and over-limit flagged
@@ -3594,7 +3613,7 @@ function printLineup() {
       if (k === 'ind') body = `<div class="lug">${luOrdered(side, key).map((sid, i) => `<div><span class="lul">${Math.floor(i / per) ? 'Ex' : lanes[i % per]}</span>${esc(nm(sid))}</div>`).join('')}</div>`;
       if (k === 'relay') body = (side.relays[key] || []).map((legs, ri) => `<div><span class="lul">${String.fromCharCode(65 + ri)}${ri < LU_RELAYS_SCORING ? '' : 'x'}</span>${legs.map(s => s ? esc(nm(s)) : '—').join(', ')}</div>`).join('');
       if (k === 'dive') body = `<div class="lug">${(side.divers[key] || []).map(sid => `<div>${esc(nm(sid))}</div>`).join('')}</div>`;
-      return `<div class="lue"><div class="lue-l"><b>${esc(luLabel(L, key))}</b>${o ? `<div class="pc">${esc(L.opp || 'Opp')}: ${o.n != null ? o.n + ' · ' : ''}${(o.times || []).map(esc).join(', ')}</div>` : ''}</div><div class="lue-b">${body}</div></div>`;
+      return `<div class="lue"><div class="lue-l"><b>${esc(luLabel(L, key))}</b>${o ? `<div class="pc">${esc(L.opp || 'Opp')}: ${[o.n != null ? o.n + (o.n === 1 ? ' swimmer' : ' swimmers') : '', (o.times || []).map(esc).join(', ')].filter(Boolean).join(' · ')}</div>` : ''}</div><div class="lue-b">${body}</div></div>`;
     }).join('');
     const list = pool.map((s, i) => { const c = counts[s.id];
       const codes = (L.out || {})[s.id] ? 'OUT' : c ? c.codes.map(k => luCode(L, k)).concat(c.dive.length ? ['DIVE'] : []).join(', ') + (c.over ? ' !' : '') : '';
