@@ -2032,7 +2032,7 @@ function ttPrintHtml() {
     }).join('')}</table>`).join('');
     return `<div class="ph"><b>NCAA DIII Top Times — ${_tt.gender === 'W' ? 'Women' : 'Men'}${_d3l.team ? ' · ' + esc(_d3l.team) : _d3l.top ? ' · top ' + _d3l.top : ''}</b>
       &nbsp;USA Swimming report ${L.date} · printed ${new Date().toLocaleDateString()}</div>
-      <div class="pm">Emory rows: green ≤ ${D3_TIERS[_tt.gender][0]}, yellow ≤ ${D3_TIERS[_tt.gender][1]}, red after · italic ~rank = Emory swim newer than the report</div>
+      <div class="pm">Emory rows: green ≤ ${d3Tiers(_tt.gender)[0]}, yellow ≤ ${d3Tiers(_tt.gender)[1]}, red after · italic ~rank = Emory swim newer than the report</div>
       <div class="pcols pcols2 d3print">${body}</div>`;
   }
   const { byEvent, events } = window._ttLast || { byEvent: {}, events: [] };
@@ -2073,15 +2073,26 @@ function ttPrintHtml() {
   }
   return `<div class="ph"><b>Emory Swimming &amp; Diving — ${_tt.gender==='W'?'Women':'Men'}'s ${_tt.kind==='split'?'Relay Split':'Individual'} Top Times</b>
        &nbsp;${_tt.season} · ${_tt.view==='name'?'by name':'by event'} · ${codeTxt} · printed ${new Date().toLocaleDateString()}</div>
-     <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · <span class="pbm">PB</span> = lifetime best · <span class="pbm vrm">VR</span> = set a team record · <span class="pbm stdm">A</span> <span class="pbm stdm">Q</span> <span class="pbm stdm">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · LO = relay lead-off · * = tie${Object.keys(window._d3 || {}).length ? ` · DIII #n = USA Swimming DIII rank (${R.d3Ranks[_tt.gender].date}): G ≤ ${D3_TIERS[_tt.gender][0]}, Y ≤ ${D3_TIERS[_tt.gender][1]}, R after; ~ = estimated, time newer than the report` : ''}</div>
+     <div class="pm">Meets: ${meets} &nbsp;|&nbsp; U = unrested · UwS = unrested, suited · S = shaved · <span class="pbm">PB</span> = lifetime best · <span class="pbm vrm">VR</span> = set a team record · <span class="pbm stdm">A</span> <span class="pbm stdm">Q</span> <span class="pbm stdm">B</span> = 2027 NCAA A cut / 2026 invited time / 2027 B cut · LO = relay lead-off · * = tie${Object.keys(window._d3 || {}).length ? ` · DIII #n = USA Swimming DIII rank (${R.d3Ranks[_tt.gender].date}): G ≤ ${d3Tiers(_tt.gender)[0]}, Y ≤ ${d3Tiers(_tt.gender)[1]}, R after; ~ = estimated, time newer than the report` : ''}</div>
      <div class="pcols ${_tt.view==='name'?'':'pcols2'}">${body}</div>`;
 }
 
 // ── DIII RANKS (USA Swimming "NCAA Top Times Report" PDFs) ────────────────
 // Two-column report; each column has its own "# Time Name(s) Team TS Date" header.
 // Only Emory's individual rows are kept. The report never names a gender, so it comes from the file name.
-const D3_TIERS = { M: [6, 12], W: [10, 18] };   // green at or better than the first, yellow the second, red after
-const d3Tier = (g, rank) => { const [a, b] = D3_TIERS[g] || D3_TIERS.M; return rank <= a ? 'g' : rank <= b ? 'y' : 'r'; };
+// DIII rank colors: green at or better than the first number, yellow the second, red after. Set on Top Times → NCAA DIII lists.
+const D3_TIERS_DEFAULT = { M: [6, 12], W: [10, 18] };
+const d3Tiers = g => { const t = (R.d3Tiers || {})[g]; return Array.isArray(t) && t.length === 2 ? t : (D3_TIERS_DEFAULT[g] || D3_TIERS_DEFAULT.M); };
+const d3Tier = (g, rank) => { const [a, b] = d3Tiers(g); return rank <= a ? 'g' : rank <= b ? 'y' : 'r'; };
+function d3SetTier(g, i, v) {
+  const t = d3Tiers(g).slice(), n = Math.round(+v);
+  if (!(n >= 1)) { renderD3List(); return; }
+  t[i] = n;
+  if (t[0] > t[1]) { if (i === 0) t[1] = t[0]; else t[0] = t[1]; }   // keep green ≤ yellow
+  R.d3Tiers = Object.assign({}, R.d3Tiers, { [g]: t });
+  save(); renderD3List();
+}
+function d3ResetTiers(g) { if (R.d3Tiers) { delete R.d3Tiers[g]; save(); } renderD3List(); }
 
 function parseUsasTopTimes(pages) {
   const STK = { FR: 'FS', BK: 'BK', BR: 'BR', FL: 'FL', IM: 'IM' };
@@ -3126,7 +3137,14 @@ function renderD3List() {
           [[30, 'Top 30'], [50, 'Top 50'], [0, 'All']].map(([v, l]) => `<option value="${v}" ${v === _d3l.top ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <label class="check-item" style="font-size:.75rem"><input type="checkbox" ${_d3l.newer ? 'checked' : ''} onchange="_d3l.newer=this.checked;renderD3List()"> Show Emory's newer swims</label>
       </div>
-      <div style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm)">USA Swimming report ${+m}/${+dd}/${y} · ${_d3l.team ? `all ${esc(_d3l.team)} swimmers on the lists` : (_d3l.top ? `top ${_d3l.top} per event` : 'full lists')} · Emory rows: green ≤ ${D3_TIERS[g][0]}, yellow ≤ ${D3_TIERS[g][1]}, red after${_d3l.newer ? ' · <i>italic ~rank</i> = an Emory swim newer than the report, placed by its time' : ''}</div>
+      <div style="display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;margin-top:.6rem;font-size:.78rem">
+        <span style="color:var(--text-dim)">${g === 'W' ? "Women's" : "Men's"} rank colors:</span>
+        <span style="background:rgba(76,175,125,.3);padding:.1rem .45rem;border-radius:4px">green</span> through #<input type="number" min="1" value="${d3Tiers(g)[0]}" onchange="d3SetTier('${g}',0,this.value)" style="width:4.2rem;padding:.25rem .4rem">
+        <span style="background:rgba(230,190,60,.3);padding:.1rem .45rem;border-radius:4px">yellow</span> through #<input type="number" min="1" value="${d3Tiers(g)[1]}" onchange="d3SetTier('${g}',1,this.value)" style="width:4.2rem;padding:.25rem .4rem">
+        <span style="background:rgba(220,80,70,.3);padding:.1rem .45rem;border-radius:4px">red</span> after
+        ${(R.d3Tiers || {})[g] ? `<button class="btn bsm" onclick="d3ResetTiers('${g}')" title="Back to ${D3_TIERS_DEFAULT[g].join(' / ')}">Reset</button>` : ''}
+      </div>
+      <div style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm)">USA Swimming report ${+m}/${+dd}/${y} · ${_d3l.team ? `all ${esc(_d3l.team)} swimmers on the lists` : (_d3l.top ? `top ${_d3l.top} per event` : 'full lists')}${_d3l.newer ? ' · <i>italic ~rank</i> = an Emory swim newer than the report, placed by its time' : ''}</div>
     </div>${cards}`;
 }
 
