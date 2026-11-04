@@ -895,6 +895,24 @@ function switchTab(id, el) {
   if (id==='lessons') renderLessons();
   if (id==='lineup') renderLineup();
   if (id==='times') ctRenderUploadInfo();
+  uiSave({ tab: id });
+}
+
+// ── reopen where you left off (this device only) ──
+function uiSave(part) {
+  try { const u = JSON.parse(localStorage.getItem('eagleroster_ui') || '{}'); localStorage.setItem('eagleroster_ui', JSON.stringify(Object.assign(u, part))); } catch (e) {}
+}
+function uiRestore() {
+  let u = {}; try { u = JSON.parse(localStorage.getItem('eagleroster_ui') || '{}'); } catch (e) {}
+  if (u.tt) ['gender', 'view', 'kind'].forEach(k => { if (u.tt[k]) {
+    _tt[k] = u.tt[k];
+    const bar = { gender: 'ttGenderBar', view: 'ttViewBar', kind: 'ttKindBar' }[k], el = document.querySelector(`#${bar} [data-v="${u.tt[k]}"]`);
+    if (el) { el.parentNode.querySelectorAll('.fpill').forEach(p => p.classList.remove('act')); el.classList.add('act'); }
+  } });
+  if (u.uaav) Object.assign(_uaav, u.uaav);
+  if (u.d3view) _d3l.view = u.d3view;
+  const tab = u.tab && [...document.querySelectorAll('.tab')].find(t => (t.getAttribute('onclick') || '').includes(`'${u.tab}'`));
+  if (tab && document.getElementById('tab-' + u.tab)) switchTab(u.tab, tab);
 }
 
 // ── ROSTER RENDERING ──────────────────────────────────────────────────────
@@ -1943,6 +1961,7 @@ const ttCodesFiltered = () => _tt.codes.size < REST_CODES.length;
 
 function setTT(k, v, el) {
   _tt[k] = v;
+  uiSave({ tt: { gender: _tt.gender, view: _tt.view, kind: _tt.kind } });
   el.parentNode.querySelectorAll('.fpill').forEach(p => p.classList.remove('act'));
   el.classList.add('act');
   renderTopTimes();
@@ -3124,6 +3143,7 @@ async function d3LoadList(g) {
 
 function renderD3List() {
   if (_tt.kind !== 'd3list') return;
+  uiSave({ d3view: _d3l.view });
   const box = document.getElementById('ttList'); if (!box) return;
   const g = _tt.gender, L = window._d3Lists[g];
   const msg = t => `<div class="card"><div class="ct">NCAA DIII Top Times — ${g === 'W' ? 'Women' : 'Men'}</div><div style="color:var(--text-dim);font-size:.82rem">${t}</div></div>`;
@@ -4198,6 +4218,7 @@ function renderUaa() {
   if (!_uaav.team || !teamNames.includes(_uaav.team)) _uaav.team = M.EM;
   if (_uaav.evTeam && !teamNames.includes(_uaav.evTeam)) _uaav.evTeam = '';
   window._uaaLast = { g, M, U, spots, view: _uaav.view, team: _uaav.team, evTeam: _uaav.evTeam };
+  uiSave({ uaav: { view: _uaav.view, team: _uaav.team, evTeam: _uaav.evTeam } });
   const fin = p => p <= 8 ? 'a' : p <= 16 ? 'b' : p <= 24 ? 'c' : 'x';
   const [y, m, dd] = U.date.split('-');
   const pill = (v, l) => `<div class="fpill ${_uaav.view === v ? 'act' : ''}" onclick="_uaav.view='${v}';renderUaa()">${l}</div>`;
@@ -4764,6 +4785,7 @@ function init() {
 
   renderAll();
   renderColPicker();
+  uiRestore();
 
   // Select first report type visually
   const first = document.querySelector('#reportTypeList .scard');
