@@ -362,6 +362,14 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
         <div id="parseStatus"></div>
         <div id="importPreview"></div>
       </div>
+      <div class="card" style="margin-top:1rem">
+        <div class="ct">Contact Info &amp; Sizes</div>
+        <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:.6rem">Drop the <b>Team Address List</b> and/or <b>BSN Sizes</b> spreadsheets (.xlsx, Women and Men tabs). It shows only on each swimmer's card under <i>Contact &amp; sizes</i>, is kept separate from the roster, and never prints.</p>
+        <button class="btn bsm" onclick="document.getElementById('ctFile').click()">&#8679; Choose spreadsheets</button>
+        <input type="file" id="ctFile" style="display:none" accept=".xlsx,.xls" multiple onchange="ctHandleFiles([...this.files]).finally(()=>{this.value=''})">
+        <div id="ctFiles" style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm)"></div>
+        <div id="ctStatus"></div>
+      </div>
     </div>
     <div>
       <div class="card">
@@ -720,6 +728,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
         <button class="modal-close" onclick="closeDetailModal()">&#x2715;</button>
       </div>
     </div>
+    <div id="detailContact"></div>
     <div id="detailTimes"></div>
   </div>
 </div>
@@ -879,6 +888,7 @@ function switchTab(id, el) {
   if (id==='tags') renderTags();
   if (id==='lessons') renderLessons();
   if (id==='lineup') renderLineup();
+  if (id==='times') ctRenderUploadInfo();
 }
 
 // ── ROSTER RENDERING ──────────────────────────────────────────────────────
@@ -1119,6 +1129,7 @@ function openDetail(id) {
     document.getElementById('detailTimes').innerHTML = h;
   }
   document.getElementById('detailModal').classList.add('open');
+  _ctOpen = false; _ctEdit = false; ctRenderCard();
 }
 
 function closeDetailModal() { document.getElementById('detailModal').classList.remove('open'); }
@@ -3839,6 +3850,156 @@ async function appPdf(id, name) {
   }, { passive: true });
   document.addEventListener('touchcancel', () => { y0 = null; hide(); }, { passive: true });
 })();
+
+// ── CONTACT INFO & SIZES ──────────────────────────────────────────────────
+// Kept in its own Firebase document (roster/contacts), NOT in the main roster: it is never saved to the device,
+// never printed, and only loaded when a card's "Contact & sizes" is opened (or the upload card is used).
+// Firebase rules limit roster/* to the two team Google accounts.
+const CT_FIELDS = [['middle', 'Middle name'], ['birthday', 'Birthday'], ['cell', 'Cell'], ['campus', 'Campus address'], ['home', 'Home address'],
+  ['parents', 'Parents'], ['parentPhones', 'Parent phones'], ['parentEmails', 'Parent emails']];
+const CT_SIZES = [['tshirt', 'T-shirt'], ['hoodie', 'Hoodie'], ['sweats', 'Sweatpants'], ['shorts', 'Shorts'], ['shoes', 'Shoes']];
+window._ct = window._ct || undefined;   // undefined = not loaded, else {people:{sid:{...}}, files:{address,sizes}}
+let _ctOpen = false, _ctEdit = false, _ctImp = null;
+const ctDoc = () => window._fsDoc(window._db, 'roster', 'contacts');
+async function ctLoad(force) {
+  if (window._ct && !force) return window._ct;
+  if (!window._fbReady) { window._ct = window._ct || { people: {}, files: {} }; return window._ct; }
+  const snap = await window._fsGet(ctDoc());
+  window._ct = snap.exists() ? JSON.parse(snap.data().data) : { people: {}, files: {} };
+  window._ct.people = window._ct.people || {}; window._ct.files = window._ct.files || {};
+  return window._ct;
+}
+async function ctSave(mutate) {   // re-read, apply the change, write — so two devices don't overwrite each other's edits
+  const c = await ctLoad(true); mutate(c);
+  if (window._fbReady) await window._fsSet(ctDoc(), { data: JSON.stringify(c) });
+  window._ct = c; return c;
+}
+
+// card section
+function ctToggle() { _ctOpen = !_ctOpen; _ctEdit = false; ctRenderCard(); }
+async function ctRenderCard() {
+  const box = document.getElementById('detailContact'); if (!box) return;
+  const sid = _currentDetailId;
+  const head = `<button class="btn bsm" onclick="ctToggle()" style="margin-bottom:.5rem">${_ctOpen ? '▾' : '▸'} Contact &amp; sizes</button>`;
+  if (!_ctOpen) { box.innerHTML = head; return; }
+  if (window._ct === undefined) { box.innerHTML = head + '<div style="font-size:.8rem;color:var(--text-dim)">Loading…</div>';
+    try { await ctLoad(); } catch (e) { box.innerHTML = head + `<div class="st sterr">Couldn't load contact info: ${esc(e.message)}</div>`; return; }
+    if (sid !== _currentDetailId) return; }
+  const P = window._ct.people[sid] || {}, Z = P.sizes || {};
+  if (_ctEdit) {
+    const inp = (k, l, v, wide) => `<label style="font-size:.7rem;color:var(--text-dim);display:block;margin-bottom:.4rem">${l}
+      <input type="${k === 'birthday' ? 'date' : 'text'}" id="ct_${k}" value="${esc(v || '')}" style="width:100%;margin-top:.15rem"></label>`;
+    box.innerHTML = head + `<div class="card" style="margin-bottom:.8rem">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 .8rem">${CT_FIELDS.map(([k, l]) => inp(k, l, P[k])).join('')}</div>
+      <div class="ct" style="margin-top:.4rem">Sizes</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:0 .6rem">${CT_SIZES.map(([k, l]) => inp('sz_' + k, l, Z[k])).join('')}</div>
+      <div style="display:flex;gap:.5rem;margin-top:.4rem"><button class="btn bsm bprimary" onclick="ctSaveCard()">Save</button><button class="btn bsm" onclick="_ctEdit=false;ctRenderCard()">Cancel</button></div></div>`;
+    return;
+  }
+  const links = (txt, kind) => esc(txt || '').replace(kind === 'mail' ? /[\w.+-]+@[\w-]+\.[\w.-]+/g : /\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,
+    m => kind === 'mail' ? `<a href="mailto:${m}" style="color:var(--gold)">${m}</a>` : `<a href="tel:${m.replace(/\D/g, '')}" style="color:var(--gold)">${m}</a>`);
+  const bday = P.birthday ? (([y, m, d]) => `${+m}/${+d}/${y}`)(P.birthday.split('-')) : '';
+  const row = (l, v) => v ? `<tr><td style="color:var(--text-dim);font-size:.72rem;white-space:nowrap;vertical-align:top;padding-right:.8rem">${l}</td><td style="font-size:.82rem">${v}</td></tr>` : '';
+  const sizes = CT_SIZES.filter(([k]) => Z[k]).map(([k, l]) => `${l} <b>${esc(Z[k])}</b>`).join(' · ');
+  const any = CT_FIELDS.some(([k]) => P[k]) || sizes;
+  box.innerHTML = head + `<div class="card" style="margin-bottom:.8rem">${any ? `<table style="width:100%;border-collapse:collapse"><tbody>
+      ${row('Middle name', esc(P.middle || ''))}${row('Birthday', bday)}
+      ${row('Cell', P.cell ? `${links(P.cell, 'tel')} &nbsp;<a href="sms:${P.cell.replace(/\D/g, '')}" style="color:var(--gold);font-size:.72rem">text</a>` : '')}
+      ${row('Campus', esc(P.campus || ''))}${row('Home', esc(P.home || ''))}${row('Parents', esc(P.parents || ''))}
+      ${row('Parent phones', links(P.parentPhones, 'tel'))}${row('Parent emails', links(P.parentEmails, 'mail'))}${row('Sizes', sizes)}
+    </tbody></table>` : '<div style="font-size:.8rem;color:var(--text-dim)">Nothing on file yet. Upload the address list / sizes spreadsheets on Times Upload, or add it here.</div>'}
+    <button class="btn bsm" style="margin-top:.5rem" onclick="_ctEdit=true;ctRenderCard()">Edit</button></div>`;
+}
+async function ctSaveCard() {
+  const sid = _currentDetailId, v = k => (document.getElementById('ct_' + k) || {}).value || '';
+  const vals = Object.fromEntries(CT_FIELDS.map(([k]) => [k, v(k).trim()])), sz = Object.fromEntries(CT_SIZES.map(([k]) => [k, v('sz_' + k).trim()]));
+  try {
+    await ctSave(c => { const P = (c.people[sid] = c.people[sid] || {}); Object.assign(P, vals); P.sizes = Object.assign({}, P.sizes, sz); });
+    _ctEdit = false; ctRenderCard();
+  } catch (e) { alert("Couldn't save: " + e.message); }
+}
+
+// spreadsheet import (Team Address List / BSN Sizes .xlsx — Women and Men tabs)
+function ctLoadXlsx() { return loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', () => window.XLSX); }
+const ctYMD = d => { if (!(d instanceof Date) || isNaN(d)) return ''; const x = new Date(d.getTime() + 12 * 3600e3); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+function ctParseBook(wb, fname) {
+  const out = [];
+  wb.SheetNames.forEach(sn => {
+    const g = /^\s*women\b/i.test(sn) ? 'W' : /^\s*men\b/i.test(sn) ? 'M' : null; if (!g) return;
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: null });
+    const hi = rows.findIndex(r => (r || []).some(c => /^(cell|t-?shirt)/i.test(String(c || '').trim()))); if (hi < 0) return;
+    const H = rows[hi].map(c => String(c || '').trim().toLowerCase());
+    const at = re => H.findIndex(h => re.test(h));
+    const kind = at(/^cell/) >= 0 ? 'address' : 'sizes';
+    let nameCol = H.findIndex(h => /^(women|men)$/.test(h)); if (nameCol < 0) nameCol = 1;
+    const cols = {};
+    if (kind === 'address') {
+      cols.cell = at(/^cell/); cols.campus = at(/^campus/); cols.birthday = at(/birth/); cols.home = at(/home\s*address/);
+      cols.parentPhones = at(/^home\s*#/); cols.parents = at(/parent/);
+      if (cols.parents >= 0 && !H[cols.parents + 1] && rows.slice(hi + 1).some(r => /@/.test(String((r || [])[cols.parents + 1] || '')))) cols.parentEmails = cols.parents + 1;
+    } else {
+      const first = at(/^t-?shirt/); let end = first; while (end < H.length && H[end]) end++;   // stop at the gap before the tally table
+      const within = re => { const i = H.findIndex((h, j) => j >= first && j < end && re.test(h)); return i; };
+      cols.tshirt = first; cols.hoodie = within(/hoodie/); cols.sweats = within(/sweat/); cols.shorts = within(/short/); cols.shoes = within(/shoe/);
+    }
+    for (const r of rows.slice(hi + 1)) {
+      const raw = String((r || [])[nameCol] || '').trim();
+      if (/^coach/i.test(raw)) break;
+      if (!raw || !/[a-z]/i.test(raw)) continue;
+      const m = raw.match(/^([^,]+),\s*(.+)$/), name = (m ? `${m[2]} ${m[1]}` : raw).replace(/\s+/g, ' ').trim();
+      if (name.split(' ').length < 2) continue;   // "Cindy", "Petroff" — staff notes, not swimmers
+      const val = k => { const c = cols[k]; if (c == null || c < 0) return undefined; const v = r[c]; if (v == null) return ''; if (v instanceof Date) return ctYMD(v); return String(v).replace(/\s+/g, ' ').trim(); };
+      const fields = {};
+      Object.keys(cols).forEach(k => { const v = val(k); if (v !== undefined) fields[k] = v; });
+      out.push({ kind, g, raw, name, fields });
+    }
+  });
+  return out;
+}
+async function ctHandleFiles(files) {
+  const st = document.getElementById('ctStatus');
+  st.innerHTML = '<div style="font-size:.8rem;color:var(--text-dim)">Reading…</div>';
+  try {
+    await ctLoadXlsx();
+    let rows = [];
+    for (const f of files) { const wb = XLSX.read(await f.arrayBuffer(), { cellDates: true }); rows = rows.concat(ctParseBook(wb, f.name).map(x => ({ ...x, file: f.name }))); }
+    if (!rows.length) { st.innerHTML = '<div class="st sterr">No Women/Men tabs with a Cell # or T-shirt column found.</div>'; return; }
+    const sw = Object.values(R.swimmers);
+    rows.forEach(x => { const m = nmMatch(x.name, x.g, sw, R.aliases); x.sid = m.id; x.how = m.how; });
+    _ctImp = rows; ctRenderImport();
+  } catch (e) { st.innerHTML = `<div class="st sterr">${esc(e.message)}</div>`; }
+}
+function ctRenderImport() {
+  const st = document.getElementById('ctStatus'), rows = _ctImp; if (!rows) { st.innerHTML = ''; return; }
+  const kinds = [...new Set(rows.map(r => r.kind))], ok = rows.filter(r => r.sid).length;
+  const opts = (g, sel) => '<option value="">— skip —</option>' + Object.values(R.swimmers).filter(s => s.gender === g).sort((a, b) => (a.last + a.first).localeCompare(b.last + b.first))
+    .map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${esc(s.last + ', ' + s.first)}${isActive(s) ? '' : ' (archived)'}</option>`).join('');
+  const odd = rows.filter(r => !r.sid || (r.how !== 'exact' && r.how !== 'alias'));
+  st.innerHTML = `<div style="font-size:.8rem;margin:.6rem 0">${rows.length} rows (${kinds.map(k => k === 'address' ? 'contact info' : 'sizes').join(' + ')}) · <b>${ok} matched</b>${odd.length ? ` · check ${odd.length} below` : ''}</div>
+    ${odd.length ? `<div style="max-height:320px;overflow-y:auto;margin-bottom:.6rem">${odd.map(r => `<div class="imp-row"><span style="flex:1;font-size:.8rem">${esc(r.raw)} <span style="color:var(--text-dim);font-size:.7rem">${r.g === 'W' ? 'W' : 'M'} · ${r.kind === 'address' ? 'contacts' : 'sizes'}${r.sid ? ' · matched by ' + r.how : ' · no match'}</span></span>
+      <select onchange="_ctImp[${rows.indexOf(r)}].sid=this.value||null;ctRenderImport()" style="width:auto;max-width:200px">${opts(r.g, r.sid)}</select></div>`).join('')}</div>` : ''}
+    <div style="display:flex;gap:.5rem"><button class="btn bsm bprimary" onclick="ctApplyImport()">Save to cards</button><button class="btn bsm" onclick="_ctImp=null;ctRenderImport()">Cancel</button></div>
+    <div style="font-size:.7rem;color:var(--text-dim);margin-top:.4rem">Replaces the ${kinds.map(k => k === 'address' ? 'contact' : 'size').join(' and ')} fields for the matched swimmers. Middle names and anything not in the sheet are kept.</div>`;
+}
+async function ctApplyImport() {
+  const rows = (_ctImp || []).filter(r => r.sid), st = document.getElementById('ctStatus');
+  try {
+    await ctSave(c => {
+      rows.forEach(r => { const P = (c.people[r.sid] = c.people[r.sid] || {});
+        if (r.kind === 'sizes') P.sizes = Object.assign({}, P.sizes, r.fields); else Object.assign(P, r.fields); });
+      [...new Set(rows.map(r => r.kind))].forEach(k => { c.files[k] = { name: rows.find(r => r.kind === k).file, date: new Date().toISOString().slice(0, 10) }; });
+    });
+    _ctImp = null;
+    st.innerHTML = `<div class="st stok">✓ Saved for ${new Set(rows.map(r => r.sid)).size} swimmers. Open a card → Contact &amp; sizes to see it.</div>`;
+    ctRenderUploadInfo();
+  } catch (e) { st.innerHTML = `<div class="st sterr">Couldn't save: ${esc(e.message)}</div>`; }
+}
+async function ctRenderUploadInfo() {
+  const el = document.getElementById('ctFiles'); if (!el) return;
+  try { const c = await ctLoad(); const f = c.files || {};
+    el.textContent = [f.address ? `Contacts: ${f.address.name} (${f.address.date})` : '', f.sizes ? `Sizes: ${f.sizes.name} (${f.sizes.date})` : ''].filter(Boolean).join(' · ') || 'Nothing uploaded yet.';
+  } catch (e) { el.textContent = ''; }
+}
 
 let _vr = new Set();
 
