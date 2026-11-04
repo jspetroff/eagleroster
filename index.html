@@ -3495,7 +3495,7 @@ function luNextSpot(key, ri, leg) {
 function luRestoreFocus() {
   const f = _lu.focus; _lu.focus = null; if (!f) return;
   const el = [...document.querySelectorAll('#luBody [data-lf]')].find(e => e.dataset.lf === f);
-  if (el) { el.focus({ preventScroll: true }); el.scrollIntoView({ block: 'nearest' }); }
+  if (el) { el.focus({ preventScroll: true }); if (el.scrollIntoView) el.scrollIntoView({ block: 'nearest' }); }
 }
 // tap/click: pick a swimmer in the pool, then click an event's "+" to place them
 function luPick(sid) { _lu.sel = _lu.sel === sid ? null : sid; renderLineup(); }
