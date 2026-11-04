@@ -3445,12 +3445,27 @@ function luDelTeam(ti) {
   if (Object.values(t.info || {}).some(x => Object.keys(x || {}).length) && !confirm(`Remove ${t.name || 'this team'} and the times you typed for them?`)) return;
   L.more.splice(ti - 1, 1); save(); renderLineup();
 }
+// opponent swimmers in an event: o.list = [{n: name, t: time}] (older lineups kept just o.times)
+const luOppList = o => o.list || (o.times || []).map(t => ({ n: '', t }));
+function luOppObj(key, ti) { const L = luCur(), all = luTeams(L)[ti || 0].info, side = (all[_lu.g] = all[_lu.g] || {}); return { side, o: (side[key] = side[key] || {}) }; }
+function luOppTidy(side, key) { const o = side[key]; if (o.list && !o.list.length) delete o.list; delete o.times; if (o.n == null && !o.list) delete side[key]; }
+function luOppRow(key, ti, i, field, v) {
+  const { side, o } = luOppObj(key, ti); o.list = luOppList(o);
+  if (!o.list[i]) o.list[i] = { n: '', t: '' };
+  o.list[i][field] = String(v).trim();
+  if (!o.list[i].n && !o.list[i].t) { o.list.splice(i, 1); luOppTidy(side, key); renderLineup(); return; }   // still-empty new row stays on screen
+  _lu.oppNew = null; luOppTidy(side, key); save(); renderLineup();
+}
+function luOppAdd(key, ti) {
+  const { o } = luOppObj(key, ti); o.list = luOppList(o).filter(r => r.n || r.t);
+  _lu.oppNew = `${key}|${ti || 0}`; _lu.focus = `${key}|nm${ti || 0}_${o.list.length}`; renderLineup();
+}
+function luOppDel(key, ti, i) { _lu.oppNew = null; const { side, o } = luOppObj(key, ti); o.list = luOppList(o); o.list.splice(i, 1); luOppTidy(side, key); save(); renderLineup(); }
 function luOpp(key, field, v, ti) {
   const L = luCur(); if (!L) return;
   const g = _lu.g, all = luTeams(L)[ti || 0].info, side = (all[g] = all[g] || {}), o = (side[key] = side[key] || {});
   if (field === 'n') { const n = parseInt(v, 10); if (v === '' || isNaN(n)) delete o.n; else o.n = Math.max(0, n); }
-  else { const t = String(v).split(/[,;\s]+/).map(x => x.trim()).filter(Boolean); if (t.length) o.times = t; else delete o.times; }
-  if (o.n == null && !o.times) delete side[key];
+  if (o.n == null && !luOppList(o).length) delete side[key];
   save(); renderLineup();
 }
 function luToggleOut(sid) { const L = luCur(); if (!L) return; L.out = L.out || {}; if (L.out[sid]) delete L.out[sid]; else L.out[sid] = true; save(); renderLineup(); }
@@ -3549,12 +3564,20 @@ function renderLineupNow() {
     if (luKind(key) === 'dive') return '';
     const nx = oppKeys[oppKeys.indexOf(key) + 1];
     return teams.map((t, ti) => {
-      const o = (t.info[g] || {})[key] || {};
-      const next = ti + 1 < teams.length ? `${key}|on${ti + 1}` : (nx ? nx + '|on0' : '');
-      return `<div style="display:flex;gap:.4rem;align-items:center;margin:-.2rem 0 .45rem;font-size:.75rem">
+      const o = (t.info[g] || {})[key] || {}, list = luOppList(o).slice();
+      if (_lu.oppNew === `${key}|${ti}`) list.push({ n: '', t: '' });   // the row just added with + Swimmer
+      const after = ti + 1 < teams.length ? `${key}|on${ti + 1}` : (nx ? nx + '|on0' : '');
+      const rows = list.map((r, i) => {
+        const nextAfterTime = i + 1 < list.length ? `${key}|nm${ti}_${i + 1}` : after;
+        return `<span style="display:inline-flex;gap:.2rem;align-items:center">
+          <input type="text" data-lf="${key}|nm${ti}_${i}" data-next="${key}|tm${ti}_${i}" value="${esc(r.n || '')}" placeholder="name" style="width:7.5rem;padding:.25rem .4rem" onchange="luOppRow('${key}',${ti},${i},'n',this.value)" ${tabNext}>
+          <input type="text" data-lf="${key}|tm${ti}_${i}" data-next="${nextAfterTime}" value="${esc(r.t || '')}" placeholder="time" style="width:5.2rem;padding:.25rem .4rem;font-family:var(--fm)" onchange="luOppRow('${key}',${ti},${i},'t',this.value)" ${tabNext.replace('onkeydown="', `onkeydown="if(event.key==='Enter'){event.preventDefault();const v=this.value;this.onchange=null;luOppRow('${key}',${ti},${i},'t',v);luOppAdd('${key}',${ti});return}`)}>
+          ${r.n || r.t ? `<button class="btn bsm" style="padding:.1rem .35rem" onclick="luOppDel('${key}',${ti},${i})" title="Remove">&#x2715;</button>` : ''}</span>`; }).join('');
+      return `<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin:-.2rem 0 .45rem;font-size:.75rem">
       <span style="color:var(--text-dim);white-space:nowrap;min-width:4.5rem;overflow:hidden;text-overflow:ellipsis">${esc(t.name || (ti ? 'Team ' + (ti + 1) : 'Opponent'))}</span>
-      <input type="number" min="0" data-lf="${key}|on${ti}" data-next="${key}|ot${ti}" value="${o.n != null ? o.n : ''}" placeholder="#" title="How many swimmers they have in this event" style="width:3.4rem;padding:.25rem .4rem" onchange="luOpp('${key}','n',this.value,${ti})" ${tabNext}>
-      <input type="text" data-lf="${key}|ot${ti}" data-next="${next}" value="${esc((o.times || []).join(', '))}" placeholder="their times, e.g. 1:59.3, 2:00.2" style="flex:1;padding:.25rem .5rem" onchange="luOpp('${key}','times',this.value,${ti})" ${tabNext}>
+      <input type="number" min="0" data-lf="${key}|on${ti}" data-next="${list.length ? `${key}|nm${ti}_0` : after}" value="${o.n != null ? o.n : ''}" placeholder="#" title="How many swimmers they have in this event" style="width:3.4rem;padding:.25rem .4rem" onchange="luOpp('${key}','n',this.value,${ti})" ${tabNext}>
+      ${rows}
+      <button class="btn bsm" data-lf="${key}|add${ti}" onclick="luOppAdd('${key}',${ti})" title="Add one of their swimmers">+ Swimmer</button>
     </div>`; }).join('');
   };
 
@@ -3628,7 +3651,7 @@ function printLineup() {
     const ev = LU_FORMATS[L.format].map(key => {
       const k = luKind(key);
       const oppTxt = teams.map((t, ti) => { const o = (t.info[g] || {})[key]; if (!o) return '';
-        return `<div class="pc">${esc(t.name || (ti ? 'Team ' + (ti + 1) : 'Opp'))}: ${[o.n != null ? o.n + (o.n === 1 ? ' swimmer' : ' swimmers') : '', (o.times || []).map(esc).join(', ')].filter(Boolean).join(' · ')}</div>`; }).join('');
+        return `<div class="pc">${esc(t.name || (ti ? 'Team ' + (ti + 1) : 'Opp'))}: ${[o.n != null ? o.n + (o.n === 1 ? ' swimmer' : ' swimmers') : '', luOppList(o).map(r => esc([r.n, r.t].filter(Boolean).join(' '))).join(', ')].filter(Boolean).join(' · ')}</div>`; }).join('');
       let body = '';
       if (k === 'ind') body = `<div class="lug">${luOrdered(side, key).map((sid, i) => `<div><span class="lul">${Math.floor(i / per) ? 'Ex' : lanes[i % per]}</span>${esc(nm(sid))}</div>`).join('')}</div>`;
       if (k === 'relay') body = (side.relays[key] || []).map((legs, ri) => `<div><span class="lul">${String.fromCharCode(65 + ri)}${ri < LU_RELAYS_SCORING ? '' : 'x'}</span>${legs.map(s => s ? esc(nm(s)) : '—').join(', ')}</div>`).join('');
