@@ -186,8 +186,9 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .tbl.d3list tr.d3row-g td{background:rgba(76,175,125,.22);}
 .tbl.d3list tr.d3row-y td{background:rgba(232,197,71,.24);}
 .tbl.d3list tr.d3row-r td{background:rgba(224,92,92,.20);}
+.uchip{font-family:var(--fm);font-size:.72rem;padding:.12rem .45rem;border-radius:4px;white-space:nowrap;} .u-a{background:rgba(76,175,125,.32);} .u-b{background:rgba(232,197,71,.32);} .u-c{background:rgba(230,140,60,.3);} .u-x{background:rgba(120,120,140,.2);} .u-rel{font-style:italic;} .u-off{opacity:.35;}
 .d3chip{font-family:var(--fm);font-size:.72rem;padding:.12rem .45rem;border-radius:4px;white-space:nowrap;} .d3c-g{background:rgba(76,175,125,.3);} .d3c-y{background:rgba(232,197,71,.32);} .d3c-r{background:rgba(224,92,92,.26);}
-@media print{.d3pchip{padding:0 3px;border-radius:2px;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3p-g{background:#cfead9!important;} .d3p-y{background:#f6e7a8!important;} .d3p-r{background:#f2c4c0!important;} table.pt.d3sw td{padding:2px 4px;line-height:1.6;} .d3print tr td{-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3print tr.d3row-g td{background:#cfead9!important;} .d3print tr.d3row-y td{background:#f6e7a8!important;} .d3print tr.d3row-r td{background:#f2c4c0!important;}}
+@media print{.upchip{padding:0 3px;border-radius:2px;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .up-a{background:#cfead9!important;} .up-b{background:#f6e7a8!important;} .up-c{background:#f7d3b0!important;} .d3pchip{padding:0 3px;border-radius:2px;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3p-g{background:#cfead9!important;} .d3p-y{background:#f6e7a8!important;} .d3p-r{background:#f2c4c0!important;} table.pt.d3sw td{padding:2px 4px;line-height:1.6;} .d3print tr td{-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3print tr.d3row-g td{background:#cfead9!important;} .d3print tr.d3row-y td{background:#f6e7a8!important;} .d3print tr.d3row-r td{background:#f2c4c0!important;}}
 .badge.std{margin-left:.35rem;border:1px solid currentColor;}
 .badge.stdA{background:#e05c5c;color:#fff;border-color:#e05c5c;}
 .badge.stdQ{color:var(--green);background:rgba(76,175,125,.12);}
@@ -522,6 +523,8 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
       <select id="ttSeason" onchange="renderTopTimes()" style="width:auto"></select>
       <button class="btn bsm" onclick="document.getElementById('d3File').click()" title="USA Swimming NCAA Top Times Report PDF(s); gender comes from the file name">&#8679; DIII ranks</button>
       <input type="file" id="d3File" accept=".pdf" multiple style="display:none" onchange="loadD3Ranks(this.files).finally(()=>{this.value=''})">
+      <button class="btn bsm" onclick="document.getElementById('uaaFile').click()" title="USA Swimming top-times report filtered to the UAA (PDF); gender comes from the file name">&#8679; UAA</button>
+      <input type="file" id="uaaFile" accept=".pdf" multiple style="display:none" onchange="loadUaaRanks(this.files).finally(()=>{this.value=''})">
       <button class="btn bsm" onclick="printTopTimes()">&#128424; Print</button>
       <button class="btn bsm" onclick="printTopTimesPack()" title="Women then men: by name (all swims), by event (best per code), relay splits (best per code) — all codes, this season">&#128424; Post-meet pack</button>
     </div>
@@ -540,6 +543,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div class="fpill" data-v="split" onclick="setTT('kind','split',this)">Relay Splits</div>
     <div class="fpill" data-v="relay" onclick="setTT('kind','relay',this)">Relays</div>
     <div class="fpill" data-v="d3list" onclick="setTT('kind','d3list',this)">NCAA DIII</div>
+    <div class="fpill" data-v="uaa" onclick="setTT('kind','uaa',this)">UAA roster</div>
   </div>
   <div class="fbar" id="ttCodeBar">
     <span style="font-size:.7rem;color:var(--text-dim);font-family:var(--fm);align-self:center">Codes:</span>
@@ -2035,6 +2039,7 @@ function printTopTimesPack() {
 // Print-ready HTML for the current Top Times selection ('' when there's nothing to show)
 function ttPrintHtml() {
   if (_tt.kind === 'relay') return ttRelayPrintHtml();
+  if (_tt.kind === 'uaa') return uaaPrintHtml();
   if (_tt.kind === 'd3list' && _d3l.view === 'swimmer') {
     const S = window._d3Swim; if (!S || !S.people.length) return '';
     const nG = S.people.filter(p => p.tier === 'g').length, nY = S.people.filter(p => p.tier === 'y').length;
@@ -2116,7 +2121,7 @@ function d3ResetTiers(g) { if (R.d3Tiers) { delete R.d3Tiers[g]; save(); } rende
 
 function parseUsasTopTimes(pages) {
   const STK = { FR: 'FS', BK: 'BK', BR: 'BR', FL: 'FL', IM: 'IM' };
-  const out = { rows: [], lists: {}, full: {}, reportDate: '' };
+  const out = { rows: [], lists: {}, full: {}, relays: {}, teams: {}, reportDate: '' };
   pages.forEach(items => {
     items = items.filter(i => i.str && i.str.trim());
     if (!out.reportDate) { const d = items.find(i => /^\d{1,2}\/\d{1,2}\/\d{4}\b/.test(i.str.trim())); if (d) out.reportDate = d.str.trim().split(' ')[0]; }
@@ -2131,14 +2136,21 @@ function parseUsasTopTimes(pages) {
       const rows = [];
       ci.forEach(it => { let r = rows.find(r => Math.abs(r.y - it.y) < 2.5); if (!r) rows.push(r = { y: it.y, items: [] }); r.items.push(it); });
       rows.sort((a, b) => b.y - a.y);
-      let ev = null;
+      let ev = null, rel = null;
       rows.forEach(r => {
         const t = r.items.sort((a, b) => a.x - b.x).map(i => i.str.trim());
         const h = t.join(' ').match(/^(\d+)\s+(FR|BK|BR|FL|IM|FR-R|MED-R)\s+SCY$/);
-        if (h) { ev = /-R$/.test(h[2]) ? null : `${+h[1]} ${STK[h[2]]}`; return; }   // relays skipped
+        if (h) { ev = /-R$/.test(h[2]) ? null : `${+h[1]} ${STK[h[2]]}`; rel = /-R$/.test(h[2]) ? `${+h[1]} ${h[2] === 'MED-R' ? 'Medley' : 'Free'} Relay` : null; return; }
+        if (rel) {   // relay: "# time names… team TS date" on the first line; the names wrap onto lines below (ignored)
+          const di = t.length - 1;
+          if (/^\d+$/.test(t[0]) && /^(?:\d+:)?\d+\.\d\d/.test(t[1] || '') && /^\d+\/\d+\/\d+$/.test(t[di]))
+            (out.relays[rel] = out.relays[rel] || []).push({ r: +t[0], t: t[1].replace(/(?:[a-z]|\([a-z]\))+$/, ''), tm: t[di - 2] || '', d: t[di] });
+          return;
+        }
         if (!ev || !/^\d+$/.test(t[0]) || !/^(?:\d+:)?\d+\.\d\d(?:[a-z]|\([a-z]\))*$/.test(t[1] || '')) return;
         const di = t.length - 1; if (!/^\d+\/\d+\/\d+$/.test(t[di])) return;
         (out.lists[ev] = out.lists[ev] || []).push(Math.round(timeToSec(t[1].replace(/(?:[a-z]|\([a-z]\))+$/, '')) * 100) / 100);
+        out.teams[t[di - 2] || ''] = 1;
         (out.full[ev] = out.full[ev] || []).push({ r: +t[0], t: t[1].replace(/(?:[a-z]|\([a-z]\))+$/, ''), n: t.slice(2, di - 2).join(' '), tm: t[di - 2] || '', d: t[di] });
         if (!/^emory/i.test(t[di - 2] || '')) return;
         out.rows.push({ ev, rank: +t[0], time: t[1].replace(/(?:[a-z]|\([a-z]\))+$/, ''), name: t.slice(2, di - 2).join(' ') });
@@ -2166,6 +2178,7 @@ async function loadD3Ranks(fileList) {
       if (err) throw new Error('could not be read');
       const res = parseUsasTopTimes(await readPdfPages(bytes));
       if (!res.rows.length) throw new Error('no Emory swims found — is this a USA Swimming NCAA Top Times Report?');
+      if (Object.keys(res.teams).length <= 10) throw new Error(`only ${Object.keys(res.teams).length} teams — this looks like the UAA-only report. Use ⇧ UAA instead.`);
       let g = /wom[ae]n|girls|female/i.test(f.name) ? 'W' : /(^|[^a-z])(men|boys|male)([^a-z]|$)/i.test(f.name) ? 'M' : null;
       if (!g) {   // fall back to whichever roster the names match
         const n = gg => res.rows.filter(r => d3Sid(r.name, gg)).length;
@@ -2310,6 +2323,7 @@ function renderTopTimes() {
   renderD3Status();
   if (_tt.kind === 'relay') { renderTopRelays(list); return; }
   if (_tt.kind === 'd3list') { window._ttLast = { byEvent: {}, events: [] }; window._d3 = {}; renderD3List(); return; }
+  if (_tt.kind === 'uaa') { window._ttLast = { byEvent: {}, events: [] }; window._d3 = {}; renderUaa(); return; }
 
   const pool = R.swims.filter(s => s.kind === _tt.kind && seasonOf(s.date) === _tt.season &&
     _tt.codes.has(s.code) &&
@@ -4025,6 +4039,161 @@ async function ctRenderUploadInfo() {
   try { const c = await ctLoad(); const f = c.files || {};
     el.textContent = [f.address ? `Contacts: ${f.address.name} (${f.address.date})` : '', f.sizes ? `Sizes: ${f.sizes.name} (${f.sizes.date})` : '', f.names ? `Full names & allergies: ${f.names.name} (${f.names.date})` : ''].filter(Boolean).join(' · ') || 'Nothing uploaded yet.';
   } catch (e) { el.textContent = ''; }
+}
+
+// ── UAA PROJECTED ROSTER (USA Swimming top-times report filtered to the UAA) ──────────────
+// Same report format as the DIII one (see parseUsasTopTimes), but only the eight UAA teams — it has its own upload
+// and its own documents (roster/uaalist_W, roster/uaalist_M). Projection, per gender:
+//  · Individual: each Emory swimmer's best time this season (report or imported since) is placed among the UAA field
+//    in the NCAA championship events. Other swimmers count only in their best 3 events by report rank; teammates
+//    count only in the 3 events they're projected to swim. Places score with the UAA table (24 places, as in SwimScore).
+//  · Relays: A and B are the Relays tab's fastest combinations. A relays fill places 1–8 (one per team), B relays
+//    stay in the B final (9–16), placed against the other teams' fastest times (the report has only those). ¼ of the points per leg.
+//  · A swimmer counts 3 individual events + 4 relays, or 2 + 5 — whichever totals more.
+const UAA_PTS = { ind: [32, 28, 27, 26, 25, 24, 23, 22, 20, 17, 16, 15, 14, 13, 12, 11, 9, 7, 6, 5, 4, 3, 2, 1],
+                  rel: [64, 56, 54, 52, 50, 48, 46, 44, 40, 34, 32, 30, 28, 26, 24, 22] };
+const UAA_EVS = ['50 FS', '100 FS', '200 FS', '500 FS', '1650 FS', '100 BK', '200 BK', '100 BR', '200 BR', '100 FL', '200 FL', '200 IM', '400 IM'];
+const UAA_SPOTS = 22;
+window._uaa = window._uaa || {};
+const uaaDoc = g => window._fsDoc(window._db, 'roster', 'uaalist_' + g);
+async function uaaLoad(g) {
+  if (window._uaa[g] !== undefined || (window._uaa._loading || {})[g]) return;
+  if (!window._fbReady) { window._uaa[g] = null; return; }
+  (window._uaa._loading = window._uaa._loading || {})[g] = true;
+  try { const snap = await window._fsGet(uaaDoc(g)); window._uaa[g] = snap.exists() ? JSON.parse(snap.data().data) : null; }
+  catch (e) { window._uaa[g] = null; console.warn('UAA list load failed', e); }
+  window._uaa._loading[g] = false;
+  if (_tt.kind === 'uaa') renderUaa();
+}
+async function loadUaaRanks(fileList) {
+  ensureState();
+  const st = document.getElementById('d3Status'), msgs = [];
+  for (const f of [...(fileList || [])]) {
+    try {
+      const res = parseUsasTopTimes(await readPdfPages(new Uint8Array(await f.arrayBuffer())));
+      const nT = Object.keys(res.teams).length;
+      if (!nT) throw new Error('no swims found — is this a USA Swimming Top Times Report?');
+      if (nT > 10) throw new Error(`${nT} teams — this is the full DIII report. Use ⇧ DIII ranks for it; the UAA one is filtered to the UAA teams.`);
+      let g = /wom[ae]n|girls|female/i.test(f.name) ? 'W' : /men|boys|male/i.test(f.name) ? 'M' : null;
+      if (!g) { const n = gg => res.rows.filter(r => d3Sid(r.name, gg)).length; g = n('W') >= n('M') ? 'W' : 'M'; }
+      const [mo, da, yr] = (res.reportDate || '').split('/');
+      const iso = yr ? `${yr}-${mo.padStart(2, '0')}-${da.padStart(2, '0')}` : new Date().toISOString().slice(0, 10);
+      const L = { file: f.name, date: iso, season: seasonOf(iso), events: res.full, relays: res.relays };
+      window._uaa[g] = L;
+      if (window._fbReady) await window._fsSet(uaaDoc(g), { data: JSON.stringify(L) });
+      msgs.push(`<div class="st stok">✓ ${esc(f.name)} → UAA ${g === 'W' ? 'Women' : 'Men'} · ${nT} teams · ${Object.keys(res.relays).length} relay events · report ${res.reportDate || iso}</div>`);
+    } catch (e) { msgs.push(`<div class="st sterr">${esc(f.name)}: ${esc(e.message)}</div>`); }
+  }
+  renderTopTimes();
+  st.insertAdjacentHTML('afterbegin', msgs.join(''));
+}
+const uaaDivers = g => { const v = ((R.uaaCfg || {}).divers || {})[g]; return v == null ? 3 : v; };
+function uaaSetDivers(g, v) { const n = Math.max(0, Math.round(+v) || 0); R.uaaCfg = R.uaaCfg || {}; R.uaaCfg.divers = Object.assign({}, R.uaaCfg.divers, { [g]: n }); save(); renderUaa(); }
+const uaaSwimSpots = g => UAA_SPOTS - Math.ceil(uaaDivers(g) / 3);   // 3 divers take one roster spot
+
+function uaaProject(g, U) {
+  const season = U.season, place = n => n, ord = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+  // the field: everyone else on the report, each in their best 3 events by report rank
+  const others = [], emoryRep = {};
+  UAA_EVS.forEach(ev => ((U.events || {})[ev] || []).forEach(r => {
+    const sec = timeToSec(r.t); if (!sec) return;
+    if (/^emory/i.test(r.tm)) { const sid = d3Sid(r.n, g); if (sid) { const k = sid + '|' + ev; if (!(k in emoryRep) || sec < emoryRep[k]) emoryRep[k] = sec; return; } }
+    others.push({ who: r.tm + '|' + r.n, ev, sec, rank: r.r });
+  }));
+  const byWho = {}; others.forEach(o => (byWho[o.who] = byWho[o.who] || []).push(o));
+  const field = {}; Object.values(byWho).forEach(l => l.sort((a, b) => a.rank - b.rank).slice(0, 3).forEach(o => (field[o.ev] = field[o.ev] || []).push(o.sec)));
+  const faster = (list, sec) => (list || []).filter(x => x < sec - 0.001).length;
+  // Emory: best time this season per event (report or imported swims), active swimmers, no divers
+  const us = {};
+  Object.values(R.swimmers).filter(s => s.gender === g && isActive(s) && !isDiver(s)).forEach(s => { us[s.id] = {}; });
+  (R.swims || []).forEach(w => { if (w.kind !== 'ind' || seasonOf(w.date) !== season || !us[w.sid] || !UAA_EVS.includes(w.event)) return;
+    const sec = timeToSec(w.time); if (sec && (!us[w.sid][w.event] || sec < us[w.sid][w.event])) us[w.sid][w.event] = sec; });
+  Object.entries(emoryRep).forEach(([k, sec]) => { const [sid, ev] = k.split('|'); if (us[sid] && (!us[sid][ev] || sec < us[sid][ev])) us[sid][ev] = sec; });
+  // pass 1: place vs the other teams only → each teammate's likely 3 events
+  const team = {};
+  Object.entries(us).forEach(([sid, evs]) => Object.entries(evs).map(([ev, sec]) => ({ ev, sec, p: 1 + faster(field[ev], sec) }))
+    .sort((a, b) => a.p - b.p).slice(0, 3).forEach(x => (team[x.ev] = team[x.ev] || []).push({ sid, sec: x.sec })));
+  // pass 2: final places, counting teammates in their 3 events
+  const res = {};
+  Object.entries(us).forEach(([sid, evs]) => {
+    const ind = Object.entries(evs).map(([ev, sec]) => {
+      const p = 1 + faster(field[ev], sec) + (team[ev] || []).filter(x => x.sid !== sid && x.sec < sec - 0.001).length;
+      return { ev, sec, place: p, pts: UAA_PTS.ind[p - 1] || 0 };
+    }).sort((a, b) => b.pts - a.pts || a.place - b.place);
+    res[sid] = { sid, ind, rel: [] };
+  });
+  // relays: Relays-tab fastest A and B for this season vs the other teams' A (fastest) and B (second fastest)
+  const keep = { season: _rl.season, code: _rl.code };
+  _rl.season = season; _rl.code = 'all';
+  let bank; try { bank = relayBank(g); } finally { _rl.season = keep.season; _rl.code = keep.code; }
+  const relays = [];
+  RELAY_DEFS.forEach(def => {
+    const list = (U.relays || {})[def.name] || [], byTeam = {};
+    list.filter(r => !/^emory/i.test(r.tm)).forEach(r => (byTeam[r.tm] = byTeam[r.tm] || []).push(timeToSec(r.t)));
+    // the report lists only each team's fastest relay, so B relays are placed against the other teams' A times (from 9th) —
+    // conservative, since their real B relays are slower; a team's second relay is used when the report has one
+    const A = [], B = []; Object.values(byTeam).forEach(ts => { ts.sort((a, b) => a - b); if (ts[0]) A.push(ts[0]); B.push(ts[1] || ts[0]); });
+    const ours = buildBest(bank, def, 2);
+    ours.forEach((order, i) => {
+      const t = relayTotal(bank, def, order); if (t == null) return;
+      const p = i === 0 ? 1 + faster(A, t) : 9 + faster(B, t), pts = UAA_PTS.rel[p - 1] || 0;
+      relays.push({ name: def.name, letter: i ? 'B' : 'A', time: t, place: p, pts, order });
+      order.forEach(sid => { if (res[sid]) res[sid].rel.push({ name: def.name, letter: i ? 'B' : 'A', place: p, pts: pts / 4 }); });
+    });
+  });
+  // best total: 3 individual + 4 relays, or 2 + 5
+  const rows = Object.values(res).map(r => {
+    const rel = r.rel.slice().sort((a, b) => b.pts - a.pts), sum = a => a.reduce((x, y) => x + y.pts, 0);
+    const opts = [[3, 4], [2, 5]].map(([i, k]) => ({ i, k, total: sum(r.ind.slice(0, i)) + sum(rel.slice(0, k)) })).sort((a, b) => b.total - a.total);
+    const o = opts[0];
+    return { ...r, rel, nInd: o.i, nRel: o.k, total: o.total, indPts: sum(r.ind.slice(0, o.i)), relPts: sum(rel.slice(0, o.k)) };
+  }).sort((a, b) => b.total - a.total || (R.swimmers[a.sid].last + R.swimmers[a.sid].first).localeCompare(R.swimmers[b.sid].last + R.swimmers[b.sid].first));
+  return { rows, relays, ord };
+}
+
+const uaaShort = n => n.replace(' Free Relay', ' FR').replace(' Medley Relay', ' MR');
+function renderUaa() {
+  if (_tt.kind !== 'uaa') return;
+  const box = document.getElementById('ttList'); if (!box) return;
+  const g = _tt.gender, U = window._uaa[g];
+  const msg = t => `<div class="card"><div class="ct">UAA projected roster — ${g === 'W' ? 'Women' : 'Men'}</div><div style="color:var(--text-dim);font-size:.82rem">${t}</div></div>`;
+  if (U === undefined) { box.innerHTML = msg('Loading…'); uaaLoad(g); return; }
+  if (!U) { box.innerHTML = msg(`Upload the ${g === 'W' ? "women's" : "men's"} USA Swimming top-times report filtered to the UAA (⇧ UAA, above).`); return; }
+  const P = uaaProject(g, U), spots = uaaSwimSpots(g), ord = P.ord;
+  window._uaaLast = { g, P, U, spots };
+  const fin = p => p <= 8 ? 'a' : p <= 16 ? 'b' : p <= 24 ? 'c' : 'x';
+  const chip = (x, used) => `<span class="uchip u-${fin(x.place)}${used ? '' : ' u-off'}" title="${used ? '' : 'not counted — over the event limit · '}${x.sec ? secToTime(x.sec) : ''}">${ord(x.place)} ${esc(x.ev)} · ${x.pts}</span>`;
+  const rchip = (x, used) => `<span class="uchip u-${fin(x.place)} u-rel${used ? '' : ' u-off'}">${x.letter} ${uaaShort(x.name)} ${ord(x.place)} · ${+x.pts.toFixed(2)}</span>`;
+  const row = (r, i) => { const s = R.swimmers[r.sid];
+    return `<div class="imp-row" style="align-items:flex-start${i >= spots ? ';opacity:.6' : ''}">
+      <span style="width:1.8rem;flex:none;font-family:var(--fm);font-size:.72rem;color:var(--text-dim);text-align:right;padding-right:.4rem">${i + 1}</span>
+      <span style="width:11rem;flex:none;font-weight:700;font-size:.82rem">${esc(s.first + ' ' + s.last)} ${classBadge(s)}</span>
+      <span style="width:4rem;flex:none;font-family:var(--fm);font-weight:700;text-align:right;padding-right:.6rem">${+r.total.toFixed(2)}</span>
+      <span style="display:flex;flex-wrap:wrap;gap:.3rem;flex:1">${r.ind.filter(x => x.pts).map((x, k) => chip(x, k < r.nInd)).join('')}${r.rel.map((x, k) => rchip(x, k < r.nRel)).join('')}${!r.ind.some(x => x.pts) && !r.rel.length ? '<span style="font-size:.72rem;color:var(--text-dim)">no scoring swims projected</span>' : ''}</span></div>`; };
+  const list = P.rows.map((r, i) => (i === spots ? `<div style="border-top:2px dashed var(--gold);margin:.4rem 0;padding-top:.3rem;font-size:.7rem;color:var(--gold);font-family:var(--fm)">— ${spots} swimmer spots${uaaDivers(g) ? ` + ${uaaDivers(g)} diver${uaaDivers(g) === 1 ? '' : 's'}` : ''} (22) —</div>` : '') + row(r, i)).join('');
+  const inPts = P.rows.slice(0, spots).reduce((a, r) => a + r.total, 0);
+  const [y, m, dd] = U.date.split('-');
+  box.innerHTML = `<div class="card" style="grid-column:1/-1">
+      <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;font-size:.8rem">
+        <span>Divers going:</span><input type="number" min="0" max="9" value="${uaaDivers(g)}" onchange="uaaSetDivers('${g}',this.value)" style="width:4rem;padding:.25rem .4rem">
+        <span style="color:var(--text-dim)">3 divers = 1 roster spot → <b>${spots}</b> swimmer spots</span></div>
+      <div style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm);line-height:1.5">UAA report ${+m}/${+dd}/${y} (${esc(U.file)}) · projected places in the NCAA championship events, UAA scoring (24 places; relays 16).
+        Emory at best time this season · others in their best 3 events · relay A/B = Relays tab's fastest; B relays stay in the B final (9th at best) and are placed against the other teams' fastest relays, since the report lists only those — so B places are conservative; ¼ of relay points per leg · best of 3 ind + 4 relays or 2 + 5 counts. Dimmed tags aren't counted.</div>
+      <div style="font-size:.7rem;margin-top:.4rem;display:flex;gap:.6rem;flex-wrap:wrap"><span class="uchip u-a">A final 1–8</span><span class="uchip u-b">B final 9–16</span><span class="uchip u-c">C final 17–24</span></div>
+    </div>
+    <div class="card" style="grid-column:1/-1;font-size:.85rem"><b>Top ${spots}: ${Math.round(inPts)} projected points</b> <span style="color:var(--text-dim)">(individual + relay credit; relays: ${P.relays.map(r => `${r.letter} ${uaaShort(r.name)} ${ord(r.place)}`).join(', ') || 'none'})</span></div>
+    <div class="card" style="grid-column:1/-1">${list || '<div style="color:var(--text-dim);font-size:.82rem">No swimmers.</div>'}</div>`;
+}
+function uaaPrintHtml() {
+  const L = window._uaaLast; if (!L) return '';
+  const { g, P, U, spots } = L, ord = P.ord, fin = p => p <= 8 ? 'a' : p <= 16 ? 'b' : p <= 24 ? 'c' : 'x';
+  const rows = P.rows.map((r, i) => { const s = R.swimmers[r.sid];
+    return (i === spots ? `<tr><td colspan="4" style="border-top:2px dashed #000;font-size:8px;padding:2px 0">— ${spots} swimmer spots + ${uaaDivers(g)} divers —</td></tr>` : '') +
+      `<tr${i >= spots ? ' style="color:#555"' : ''}><td class="r" style="width:20px">${i + 1}</td><td class="n" style="width:24%;font-weight:700">${esc(s.first + ' ' + s.last)}</td><td class="r" style="width:40px"><b>${+r.total.toFixed(1)}</b></td>
+      <td style="white-space:normal">${r.ind.filter(x => x.pts).slice(0, r.nInd).map(x => `<span class="upchip up-${fin(x.place)}">${ord(x.place)} ${esc(x.ev)} ${x.pts}</span>`).join(' ')} ${r.rel.slice(0, r.nRel).map(x => `<span class="upchip up-${fin(x.place)}"><i>${x.letter} ${uaaShort(x.name)} ${ord(x.place)} ${+x.pts.toFixed(1)}</i></span>`).join(' ')}</td></tr>`; }).join('');
+  return `<div class="ph"><b>UAA projected roster — ${g === 'W' ? 'Women' : 'Men'}</b> &nbsp;UAA report ${U.date} · printed ${new Date().toLocaleDateString()}</div>
+    <div class="pm">Points = projected UAA individual points (best 3, or 2 with 5 relays) + ¼ of relay points for A/B relays (Relays tab's fastest; B relays 9th at best, placed against the other teams' fastest relays). Green = A final, yellow = B, orange = C.</div>
+    <table class="pt d3sw" style="font-size:9.5px">${rows}</table>`;
 }
 
 let _vr = new Set();
