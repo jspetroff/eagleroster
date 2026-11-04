@@ -186,7 +186,8 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .tbl.d3list tr.d3row-g td{background:rgba(76,175,125,.22);}
 .tbl.d3list tr.d3row-y td{background:rgba(232,197,71,.24);}
 .tbl.d3list tr.d3row-r td{background:rgba(224,92,92,.20);}
-@media print{.d3print tr td{-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3print tr.d3row-g td{background:#cfead9!important;} .d3print tr.d3row-y td{background:#f6e7a8!important;} .d3print tr.d3row-r td{background:#f2c4c0!important;}}
+.d3chip{font-family:var(--fm);font-size:.72rem;padding:.12rem .45rem;border-radius:4px;white-space:nowrap;} .d3c-g{background:rgba(76,175,125,.3);} .d3c-y{background:rgba(232,197,71,.32);} .d3c-r{background:rgba(224,92,92,.26);}
+@media print{.d3pchip{padding:0 3px;border-radius:2px;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3p-g{background:#cfead9!important;} .d3p-y{background:#f6e7a8!important;} .d3p-r{background:#f2c4c0!important;} table.pt.d3sw td{padding:2px 4px;line-height:1.6;} .d3print tr td{-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3print tr.d3row-g td{background:#cfead9!important;} .d3print tr.d3row-y td{background:#f6e7a8!important;} .d3print tr.d3row-r td{background:#f2c4c0!important;}}
 .badge.std{margin-left:.35rem;border:1px solid currentColor;}
 .badge.stdA{background:#e05c5c;color:#fff;border-color:#e05c5c;}
 .badge.stdQ{color:var(--green);background:rgba(76,175,125,.12);}
@@ -2023,6 +2024,14 @@ function printTopTimesPack() {
 // Print-ready HTML for the current Top Times selection ('' when there's nothing to show)
 function ttPrintHtml() {
   if (_tt.kind === 'relay') return ttRelayPrintHtml();
+  if (_tt.kind === 'd3list' && _d3l.view === 'swimmer') {
+    const S = window._d3Swim; if (!S || !S.people.length) return '';
+    const nG = S.people.filter(p => p.tier === 'g').length, nY = S.people.filter(p => p.tier === 'y').length;
+    const rows = S.people.map(p => `<tr><td class="n" style="width:30%;font-weight:700">${esc(p.name)}</td><td style="white-space:normal">${p.list.map(x => `<span class="d3pchip d3p-${x.tier}"${x.est ? ' style="font-style:italic"' : ''}>${x.est ? '~' : ''}#${x.r} ${esc(x.ev)}</span>`).join(' ')}</td></tr>`).join('');
+    return `<div class="ph"><b>Projected NCAA DIII roster — ${S.g === 'W' ? 'Women' : 'Men'}</b> &nbsp;USA Swimming report ${S.date} · printed ${new Date().toLocaleDateString()}</div>
+      <div class="pm">${nG} with a green event · ${nY} more with yellow (${nG + nY}) · ${S.people.length - nG - nY} red only · green ≤ ${d3Tiers(S.g)[0]}, yellow ≤ ${d3Tiers(S.g)[1]} · italic ~rank = swim newer than the report</div>
+      <table class="pt d3sw" style="font-size:10px">${rows}</table>`;
+  }
   if (_tt.kind === 'd3list') {
     const L = window._d3Lists[_tt.gender], tabs = [...document.querySelectorAll('#ttList table.d3list')];
     if (!L || !tabs.length) return '';
@@ -3066,7 +3075,7 @@ function printStandards() {
 // ── DIII lists (full USA Swimming top-times lists, on the Standards tab) ─────
 // Saved per gender in their own Firebase document (roster/d3list_W, roster/d3list_M) so the main roster
 // document stays well under Firestore's 1 MB limit.
-let _d3l = { team: '', newer: true, top: 30, loading: {} };
+let _d3l = { team: '', newer: true, top: 30, view: 'event', loading: {} };
 window._d3Lists = window._d3Lists || {};
 const d3ListDoc = g => window._fsDoc(window._db, 'roster', 'd3list_' + g);
 async function d3SaveList(g, list) {
@@ -3094,8 +3103,8 @@ function renderD3List() {
   const season = seasonOf(L.date), rankOf = d3Ranker(g, season);
   const evs = STD_EVENTS.filter(e => (L.events[e] || []).length);
   // one event's rows: the report's list + (optionally) Emory swims newer/faster than it, placed by time
-  const eventRows = ev => {
-    const all = L.events[ev].map(r => ({ ...r, emory: /^emory/i.test(r.tm) })), extra = [];
+  const eventAll = ev => {
+    const all = L.events[ev].map(r => { const emory = /^emory/i.test(r.tm); return { ...r, emory, sid: emory ? d3Sid(r.n, g) : null }; }), extra = [];
     if (_d3l.newer) {
       const onList = {};
       all.filter(r => r.emory).forEach(r => { const sid = d3Sid(r.n, g); if (sid) onList[sid] = timeToSec(r.t); });
@@ -3109,18 +3118,41 @@ function renderD3List() {
         if (onList[s.sid] !== undefined && timeToSec(s.time) >= onList[s.sid] - 0.001) return;
         const rk = rankOf(s.sid, ev, s.time); if (!rk) return;
         const sw = R.swimmers[s.sid];
-        extra.push({ r: rk.rank, t: s.time, n: `${sw.first} ${sw.last}`, tm: 'Emory', d: `${+s.date.slice(5, 7)}/${+s.date.slice(8, 10)}/${s.date.slice(2, 4)}`, emory: true, newer: true, meet: s.meet });
+        extra.push({ sid: s.sid, r: rk.rank, t: s.time, n: `${sw.first} ${sw.last}`, tm: 'Emory', d: `${+s.date.slice(5, 7)}/${+s.date.slice(8, 10)}/${s.date.slice(2, 4)}`, emory: true, newer: true, meet: s.meet });
       });
     }
-    return all.concat(extra).filter(r => _d3l.team ? (r.tm === _d3l.team || (r.newer && /^emory/i.test(_d3l.team))) : (!_d3l.top || r.r <= _d3l.top))
-      .sort((a, b) => timeToSec(a.t) - timeToSec(b.t) || (a.newer ? 1 : 0) - (b.newer ? 1 : 0));
+    return all.concat(extra).sort((a, b) => timeToSec(a.t) - timeToSec(b.t) || (a.newer ? 1 : 0) - (b.newer ? 1 : 0));
+  };
+  const eventRows = ev => eventAll(ev).filter(r => _d3l.team ? (r.tm === _d3l.team || (r.newer && /^emory/i.test(_d3l.team))) : (!_d3l.top || r.r <= _d3l.top));
+  // by swimmer: every Emory swimmer on the lists with their rank in each event (best of the report and newer swims)
+  const bySwimmer = () => {
+    const per = {}, NCAA_EVS = ['50 FS', '100 FS', '200 FS', '500 FS', '1650 FS', '100 BK', '200 BK', '100 BR', '200 BR', '100 FL', '200 FL', '200 IM', '400 IM'];   // championship events only
+    evs.filter(ev => NCAA_EVS.includes(ev)).forEach(ev => eventAll(ev).filter(r => r.emory).forEach(r => {
+      const k = r.sid || 'n:' + r.n, p = (per[k] = per[k] || { sid: r.sid, n: r.n, ev: {} }), cur = p.ev[ev];
+      if (!cur || r.r < cur.r) p.ev[ev] = { r: r.r, est: !!r.newer, t: r.t };
+    }));
+    const rank = { g: 0, y: 1, r: 2 };
+    return Object.values(per).map(p => {
+      const sw = p.sid && R.swimmers[p.sid];
+      const list = Object.entries(p.ev).map(([ev, x]) => ({ ev, ...x, tier: d3Tier(g, x.r) })).sort((a, b) => a.r - b.r);
+      return { ...p, name: sw ? `${sw.first} ${sw.last}` : p.n, sw, list, best: list[0].r, tier: list[0].tier };
+    }).sort((a, b) => rank[a.tier] - rank[b.tier] || a.best - b.best || a.name.localeCompare(b.name));
   };
   const teams = {};
   evs.forEach(ev => L.events[ev].forEach(r => { teams[r.tm] = (teams[r.tm] || 0) + 1; }));
   const teamList = Object.keys(teams).sort((a, b) => (/^emory/i.test(b) - /^emory/i.test(a)) || a.localeCompare(b));
   if (_d3l.team && !teams[_d3l.team]) _d3l.team = '';
   const [y, m, dd] = L.date.split('-');
-  const cards = evs.map(ev => {
+  const swimView = _d3l.view === 'swimmer';
+  const people = swimView ? bySwimmer() : [];
+  window._d3Swim = swimView ? { g, people, date: L.date } : null;
+  const chip = x => `<span class="d3chip d3c-${x.tier}"${x.est ? ' style="font-style:italic"' : ''} title="${esc(x.t)}">${x.est ? '~' : ''}#${x.r} ${esc(x.ev)}</span>`;
+  const grp = (t, label) => { const ps = people.filter(p => p.tier === t); return ps.length ? `<div class="card" style="grid-column:1/-1"><div class="ct">${label} · ${ps.length}</div>${
+    ps.map(p => `<div class="imp-row" style="align-items:flex-start"><span style="width:11rem;flex:none;font-weight:700;font-size:.82rem">${esc(p.name)} ${p.sw ? classBadge(p.sw) : ''}</span><span style="display:flex;flex-wrap:wrap;gap:.3rem;flex:1;justify-content:flex-start">${p.list.map(chip).join('')}</span></div>`).join('')}</div>` : ''; };
+  const nG = people.filter(p => p.tier === 'g').length, nY = people.filter(p => p.tier === 'y').length;
+  const swimCards = swimView ? (people.length ? `<div class="card" style="grid-column:1/-1;font-size:.85rem"><b>Projected: ${nG} swimmer${nG === 1 ? '' : 's'} with a green event</b><span style="color:var(--text-dim);font-size:.75rem"> (NCAA championship events only)</span>${nY ? ` · ${nY} more with a yellow event (${nG + nY} total)` : ''} · ${people.length - nG - nY} red only</div>` +
+    grp('g', 'Green') + grp('y', 'Yellow (best event)') + grp('r', 'Red only') : '<div class="card" style="grid-column:1/-1;color:var(--text-dim);font-size:.82rem">No Emory swimmers on these lists.</div>') : '';
+  const cards = swimView ? swimCards : evs.map(ev => {
     const rows = eventRows(ev);
     return `<div class="card"><div class="ct" style="display:flex;justify-content:space-between"><span>${esc(ev)}</span><span>${rows.length}</span></div>${
       rows.length ? `<table class="tbl d3list" data-ev="${esc(ev)}"><tbody>${rows.map(r => `<tr class="${r.emory ? 'd3row-' + d3Tier(g, r.r) : ''}"${r.newer ? ' style="font-style:italic"' : ''}>
@@ -3131,10 +3163,11 @@ function renderD3List() {
   }).join('');
   box.innerHTML = `<div class="card" style="grid-column:1/-1">
       <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
-        <select onchange="_d3l.team=this.value;renderD3List()" style="width:auto;max-width:240px"><option value="">All teams</option>${
+        <div class="fbar" style="margin:0"><div class="fpill ${swimView ? '' : 'act'}" onclick="_d3l.view='event';renderD3List()">By event</div><div class="fpill ${swimView ? 'act' : ''}" onclick="_d3l.view='swimmer';renderD3List()">Our swimmers</div></div>
+        ${swimView ? '' : `<select onchange="_d3l.team=this.value;renderD3List()" style="width:auto;max-width:240px"><option value="">All teams</option>${
           teamList.map(t => `<option value="${esc(t)}" ${t === _d3l.team ? 'selected' : ''}>${esc(t)} (${teams[t]})</option>`).join('')}</select>
         <select onchange="_d3l.top=+this.value;renderD3List()" style="width:auto" ${_d3l.team ? 'disabled title="A team shows all its swimmers"' : ''}>${
-          [[30, 'Top 30'], [50, 'Top 50'], [0, 'All']].map(([v, l]) => `<option value="${v}" ${v === _d3l.top ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          [[30, 'Top 30'], [50, 'Top 50'], [0, 'All']].map(([v, l]) => `<option value="${v}" ${v === _d3l.top ? 'selected' : ''}>${l}</option>`).join('')}</select>`}
         <label class="check-item" style="font-size:.75rem"><input type="checkbox" ${_d3l.newer ? 'checked' : ''} onchange="_d3l.newer=this.checked;renderD3List()"> Show Emory's newer swims</label>
       </div>
       <div style="display:flex;gap:.45rem;align-items:center;flex-wrap:wrap;margin-top:.6rem;font-size:.78rem">
@@ -3144,7 +3177,7 @@ function renderD3List() {
         <span style="background:rgba(220,80,70,.3);padding:.1rem .45rem;border-radius:4px">red</span> after
         ${(R.d3Tiers || {})[g] ? `<button class="btn bsm" onclick="d3ResetTiers('${g}')" title="Back to ${D3_TIERS_DEFAULT[g].join(' / ')}">Reset</button>` : ''}
       </div>
-      <div style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm)">USA Swimming report ${+m}/${+dd}/${y} · ${_d3l.team ? `all ${esc(_d3l.team)} swimmers on the lists` : (_d3l.top ? `top ${_d3l.top} per event` : 'full lists')}${_d3l.newer ? ' · <i>italic ~rank</i> = an Emory swim newer than the report, placed by its time' : ''}</div>
+      <div style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm)">USA Swimming report ${+m}/${+dd}/${y} · ${swimView ? 'each Emory swimmer\'s rank in every NCAA event they\'re on the lists in' : _d3l.team ? `all ${esc(_d3l.team)} swimmers on the lists` : (_d3l.top ? `top ${_d3l.top} per event` : 'full lists')}${_d3l.newer ? ' · <i>italic ~rank</i> = an Emory swim newer than the report, placed by its time' : ''}</div>
     </div>${cards}`;
 }
 
