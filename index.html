@@ -4089,6 +4089,8 @@ async function loadUaaRanks(fileList) {
 }
 const uaaDivers = g => { const v = ((R.uaaCfg || {}).divers || {})[g]; return v == null ? 3 : v; };
 function uaaSetDivers(g, v) { const n = Math.max(0, Math.round(+v) || 0); R.uaaCfg = R.uaaCfg || {}; R.uaaCfg.divers = Object.assign({}, R.uaaCfg.divers, { [g]: n }); save(); renderUaa(); }
+const uaaRelaysOn = () => (R.uaaCfg || {}).relays !== false;
+function uaaSetRelays(on) { R.uaaCfg = R.uaaCfg || {}; R.uaaCfg.relays = !!on; save(); renderUaa(); }
 const uaaSwimSpots = g => UAA_SPOTS - Math.ceil(uaaDivers(g) / 3);   // 3 divers take one roster spot
 
 function uaaProject(g, U) {
@@ -4141,10 +4143,11 @@ function uaaProject(g, U) {
       order.forEach(sid => { if (res[sid]) res[sid].rel.push({ name: def.name, letter: i ? 'B' : 'A', place: p, pts: pts / 4 }); });
     });
   });
-  // best total: 3 individual + 4 relays, or 2 + 5
+  // best total: 3 individual + 4 relays, or 2 + 5 (relay credit off: best 3 individual)
+  const relOn = uaaRelaysOn();
   const rows = Object.values(res).map(r => {
-    const rel = r.rel.slice().sort((a, b) => b.pts - a.pts), sum = a => a.reduce((x, y) => x + y.pts, 0);
-    const opts = [[3, 4], [2, 5]].map(([i, k]) => ({ i, k, total: sum(r.ind.slice(0, i)) + sum(rel.slice(0, k)) })).sort((a, b) => b.total - a.total);
+    const rel = relOn ? r.rel.slice().sort((a, b) => b.pts - a.pts) : [], sum = a => a.reduce((x, y) => x + y.pts, 0);
+    const opts = (relOn ? [[3, 4], [2, 5]] : [[3, 0]]).map(([i, k]) => ({ i, k, total: sum(r.ind.slice(0, i)) + sum(rel.slice(0, k)) })).sort((a, b) => b.total - a.total);
     const o = opts[0];
     return { ...r, rel, nInd: o.i, nRel: o.k, total: o.total, indPts: sum(r.ind.slice(0, o.i)), relPts: sum(rel.slice(0, o.k)) };
   }).sort((a, b) => b.total - a.total || (R.swimmers[a.sid].last + R.swimmers[a.sid].first).localeCompare(R.swimmers[b.sid].last + R.swimmers[b.sid].first));
@@ -4176,12 +4179,13 @@ function renderUaa() {
   box.innerHTML = `<div class="card" style="grid-column:1/-1">
       <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;font-size:.8rem">
         <span>Divers going:</span><input type="number" min="0" max="9" value="${uaaDivers(g)}" onchange="uaaSetDivers('${g}',this.value)" style="width:4rem;padding:.25rem .4rem">
-        <span style="color:var(--text-dim)">3 divers = 1 roster spot → <b>${spots}</b> swimmer spots</span></div>
+        <span style="color:var(--text-dim)">3 divers = 1 roster spot → <b>${spots}</b> swimmer spots</span>
+        <label class="check-item" style="font-size:.8rem;margin-left:.8rem"><input type="checkbox" ${uaaRelaysOn() ? 'checked' : ''} onchange="uaaSetRelays(this.checked)"> Relay credit</label></div>
       <div style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm);line-height:1.5">UAA report ${+m}/${+dd}/${y} (${esc(U.file)}) · projected places in the NCAA championship events, UAA scoring (24 places; relays 16).
         Emory at best time this season · others in their best 3 events · relay A/B = Relays tab's fastest; B relays stay in the B final (9th at best) and are placed against the other teams' fastest relays, since the report lists only those — so B places are conservative; ¼ of relay points per leg · best of 3 ind + 4 relays or 2 + 5 counts. Dimmed tags aren't counted.</div>
       <div style="font-size:.7rem;margin-top:.4rem;display:flex;gap:.6rem;flex-wrap:wrap"><span class="uchip u-a">A final 1–8</span><span class="uchip u-b">B final 9–16</span><span class="uchip u-c">C final 17–24</span></div>
     </div>
-    <div class="card" style="grid-column:1/-1;font-size:.85rem"><b>Top ${spots}: ${Math.round(inPts)} projected points</b> <span style="color:var(--text-dim)">(individual + relay credit; relays: ${P.relays.map(r => `${r.letter} ${uaaShort(r.name)} ${ord(r.place)}`).join(', ') || 'none'})</span></div>
+    <div class="card" style="grid-column:1/-1;font-size:.85rem"><b>Top ${spots}: ${Math.round(inPts)} projected points</b> <span style="color:var(--text-dim)">${uaaRelaysOn() ? `(individual + relay credit; relays: ${P.relays.map(r => `${r.letter} ${uaaShort(r.name)} ${ord(r.place)}`).join(', ') || 'none'})` : '(individual only — best 3 events; relay credit off)'}</span></div>
     <div class="card" style="grid-column:1/-1">${list || '<div style="color:var(--text-dim);font-size:.82rem">No swimmers.</div>'}</div>`;
 }
 function uaaPrintHtml() {
@@ -4192,7 +4196,7 @@ function uaaPrintHtml() {
       `<tr${i >= spots ? ' style="color:#555"' : ''}><td class="r" style="width:20px">${i + 1}</td><td class="n" style="width:24%;font-weight:700">${esc(s.first + ' ' + s.last)}</td><td class="r" style="width:40px"><b>${+r.total.toFixed(1)}</b></td>
       <td style="white-space:normal">${r.ind.filter(x => x.pts).slice(0, r.nInd).map(x => `<span class="upchip up-${fin(x.place)}">${ord(x.place)} ${esc(x.ev)} ${x.pts}</span>`).join(' ')} ${r.rel.slice(0, r.nRel).map(x => `<span class="upchip up-${fin(x.place)}"><i>${x.letter} ${uaaShort(x.name)} ${ord(x.place)} ${+x.pts.toFixed(1)}</i></span>`).join(' ')}</td></tr>`; }).join('');
   return `<div class="ph"><b>UAA projected roster — ${g === 'W' ? 'Women' : 'Men'}</b> &nbsp;UAA report ${U.date} · printed ${new Date().toLocaleDateString()}</div>
-    <div class="pm">Points = projected UAA individual points (best 3, or 2 with 5 relays) + ¼ of relay points for A/B relays (Relays tab's fastest; B relays 9th at best, placed against the other teams' fastest relays). Green = A final, yellow = B, orange = C.</div>
+    <div class="pm">${uaaRelaysOn() ? '' : '<b>Relay credit off — individual points only (best 3 events).</b> '}Points = projected UAA individual points (best 3, or 2 with 5 relays) + ¼ of relay points for A/B relays (Relays tab's fastest; B relays 9th at best, placed against the other teams' fastest relays). Green = A final, yellow = B, orange = C.</div>
     <table class="pt d3sw" style="font-size:9.5px">${rows}</table>`;
 }
 
