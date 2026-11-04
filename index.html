@@ -364,7 +364,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
       </div>
       <div class="card" style="margin-top:1rem">
         <div class="ct">Contact Info &amp; Sizes</div>
-        <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:.6rem">Drop the <b>Team Address List</b> and/or <b>BSN Sizes</b> spreadsheets (.xlsx, Women and Men tabs). It shows only on each swimmer's card under <i>Contact &amp; sizes</i>, is kept separate from the roster, and never prints.</p>
+        <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:.6rem">Drop the <b>Team Address List</b>, <b>BSN Sizes</b> and/or <b>Names and Birthdays</b> (middle names) spreadsheets (.xlsx, Women and Men tabs). It shows only on each swimmer's card under <i>Contact &amp; sizes</i>, is kept separate from the roster, and never prints.</p>
         <button class="btn bsm" onclick="document.getElementById('ctFile').click()">&#8679; Choose spreadsheets</button>
         <input type="file" id="ctFile" style="display:none" accept=".xlsx,.xls" multiple onchange="ctHandleFiles([...this.files]).finally(()=>{this.value=''})">
         <div id="ctFiles" style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm)"></div>
@@ -3921,22 +3921,35 @@ async function ctSaveCard() {
 
 // spreadsheet import (Team Address List / BSN Sizes .xlsx — Women and Men tabs)
 function ctLoadXlsx() { return loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', () => window.XLSX); }
+// middle name = what's between the first word and the roster last name ("Caitlin Anne Crysel" → "Anne"; "Jacqueline Marie St Clair" → "Marie")
+function ctMiddle(legal, sw) {
+  const t = String(legal || '').replace(/\s+/g, ' ').trim().split(' '), nt = t.map(nmNorm);
+  const last = nmNorm(sw.last || '').split(' ').filter(w => !/^(jr|sr|ii|iii|iv)$/.test(w));
+  for (let k = 1; k + last.length <= t.length; k++)   // where the roster last name starts in the legal name
+    if (last.length && last.every((w, i) => nt[k + i] === w)) return t.slice(1, k).join(' ');
+  let n = last.length || 1;   // not found as-is: assume it's the end (minus a Jr./III)
+  if (/^(jr|sr|ii|iii|iv)\.?$/i.test(t[t.length - 1])) n++;
+  return t.slice(1, Math.max(1, t.length - n)).join(' ');
+}
 const ctYMD = d => { if (!(d instanceof Date) || isNaN(d)) return ''; const x = new Date(d.getTime() + 12 * 3600e3); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
 function ctParseBook(wb, fname) {
   const out = [];
   wb.SheetNames.forEach(sn => {
     const g = /^\s*women\b/i.test(sn) ? 'W' : /^\s*men\b/i.test(sn) ? 'M' : null; if (!g) return;
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: null });
-    const hi = rows.findIndex(r => (r || []).some(c => /^(cell|t-?shirt)/i.test(String(c || '').trim()))); if (hi < 0) return;
+    const hi = rows.findIndex(r => (r || []).some(c => /^(cell|t-?shirt)|middle|license/i.test(String(c || '').trim()))); if (hi < 0) return;
     const H = rows[hi].map(c => String(c || '').trim().toLowerCase());
     const at = re => H.findIndex(h => re.test(h));
-    const kind = at(/^cell/) >= 0 ? 'address' : 'sizes';
-    let nameCol = H.findIndex(h => /^(women|men)$/.test(h)); if (nameCol < 0) nameCol = 1;
+    const kind = at(/^cell/) >= 0 ? 'address' : at(/middle|license/) >= 0 ? 'names' : 'sizes';
+    let nameCol = kind === 'names' ? at(/middle|license/) : H.findIndex(h => /^(women|men)$/.test(h)); if (nameCol < 0) nameCol = 1;
     const cols = {};
     if (kind === 'address') {
       cols.cell = at(/^cell/); cols.campus = at(/^campus/); cols.birthday = at(/birth/); cols.home = at(/home\s*address/);
       cols.parentPhones = at(/^home\s*#/); cols.parents = at(/parent/);
       if (cols.parents >= 0 && !H[cols.parents + 1] && rows.slice(hi + 1).some(r => /@/.test(String((r || [])[cols.parents + 1] || '')))) cols.parentEmails = cols.parents + 1;
+    } else if (kind === 'names') {
+      // "First Middle Last as on your license" — only the middle name is kept (worked out once matched to the roster);
+      // the sheet's allergy and ID-number columns are deliberately not read
     } else {
       const first = at(/^t-?shirt/); let end = first; while (end < H.length && H[end]) end++;   // stop at the gap before the tally table
       const within = re => { const i = H.findIndex((h, j) => j >= first && j < end && re.test(h)); return i; };
@@ -3951,6 +3964,7 @@ function ctParseBook(wb, fname) {
       const val = k => { const c = cols[k]; if (c == null || c < 0) return undefined; const v = r[c]; if (v == null) return ''; if (v instanceof Date) return ctYMD(v); return String(v).replace(/\s+/g, ' ').trim(); };
       const fields = {};
       Object.keys(cols).forEach(k => { const v = val(k); if (v !== undefined) fields[k] = v; });
+      if (kind === 'names') fields.legal = raw.replace(/\s+/g, ' ');
       out.push({ kind, g, raw, name, fields });
     }
   });
@@ -3963,7 +3977,7 @@ async function ctHandleFiles(files) {
     await ctLoadXlsx();
     let rows = [];
     for (const f of files) { const wb = XLSX.read(await f.arrayBuffer(), { cellDates: true }); rows = rows.concat(ctParseBook(wb, f.name).map(x => ({ ...x, file: f.name }))); }
-    if (!rows.length) { st.innerHTML = '<div class="st sterr">No Women/Men tabs with a Cell # or T-shirt column found.</div>'; return; }
+    if (!rows.length) { st.innerHTML = '<div class="st sterr">No Women/Men tabs with a Cell #, T-shirt or license-name column found.</div>'; return; }
     const sw = Object.values(R.swimmers);
     rows.forEach(x => { const m = nmMatch(x.name, x.g, sw, R.aliases); x.sid = m.id; x.how = m.how; });
     _ctImp = rows; ctRenderImport();
@@ -3975,18 +3989,20 @@ function ctRenderImport() {
   const opts = (g, sel) => '<option value="">— skip —</option>' + Object.values(R.swimmers).filter(s => s.gender === g).sort((a, b) => (a.last + a.first).localeCompare(b.last + b.first))
     .map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${esc(s.last + ', ' + s.first)}${isActive(s) ? '' : ' (archived)'}</option>`).join('');
   const odd = rows.filter(r => !r.sid || (r.how !== 'exact' && r.how !== 'alias'));
-  st.innerHTML = `<div style="font-size:.8rem;margin:.6rem 0">${rows.length} rows (${kinds.map(k => k === 'address' ? 'contact info' : 'sizes').join(' + ')}) · <b>${ok} matched</b>${odd.length ? ` · check ${odd.length} below` : ''}</div>
-    ${odd.length ? `<div style="max-height:320px;overflow-y:auto;margin-bottom:.6rem">${odd.map(r => `<div class="imp-row"><span style="flex:1;font-size:.8rem">${esc(r.raw)} <span style="color:var(--text-dim);font-size:.7rem">${r.g === 'W' ? 'W' : 'M'} · ${r.kind === 'address' ? 'contacts' : 'sizes'}${r.sid ? ' · matched by ' + r.how : ' · no match'}</span></span>
+  st.innerHTML = `<div style="font-size:.8rem;margin:.6rem 0">${rows.length} rows (${kinds.map(k => k === 'address' ? 'contact info' : k === 'names' ? 'middle names' : 'sizes').join(' + ')}) · <b>${ok} matched</b>${odd.length ? ` · check ${odd.length} below` : ''}</div>
+    ${odd.length ? `<div style="max-height:320px;overflow-y:auto;margin-bottom:.6rem">${odd.map(r => `<div class="imp-row"><span style="flex:1;font-size:.8rem">${esc(r.raw)} <span style="color:var(--text-dim);font-size:.7rem">${r.g === 'W' ? 'W' : 'M'} · ${r.kind === 'address' ? 'contacts' : r.kind === 'names' ? 'middle name' : 'sizes'}${r.sid ? ' · matched by ' + r.how : ' · no match'}</span></span>
       <select onchange="_ctImp[${rows.indexOf(r)}].sid=this.value||null;ctRenderImport()" style="width:auto;max-width:200px">${opts(r.g, r.sid)}</select></div>`).join('')}</div>` : ''}
     <div style="display:flex;gap:.5rem"><button class="btn bsm bprimary" onclick="ctApplyImport()">Save to cards</button><button class="btn bsm" onclick="_ctImp=null;ctRenderImport()">Cancel</button></div>
-    <div style="font-size:.7rem;color:var(--text-dim);margin-top:.4rem">Replaces the ${kinds.map(k => k === 'address' ? 'contact' : 'size').join(' and ')} fields for the matched swimmers. Middle names and anything not in the sheet are kept.</div>`;
+    <div style="font-size:.7rem;color:var(--text-dim);margin-top:.4rem">Replaces the ${kinds.map(k => k === 'address' ? 'contact' : k === 'names' ? 'middle-name' : 'size').join(', ')} fields for the matched swimmers; everything else on their cards is kept.${kinds.includes('names') ? ' From the names sheet only the middle name is read (not allergies or ID numbers).' : ''}</div>`;
 }
 async function ctApplyImport() {
   const rows = (_ctImp || []).filter(r => r.sid), st = document.getElementById('ctStatus');
   try {
     await ctSave(c => {
       rows.forEach(r => { const P = (c.people[r.sid] = c.people[r.sid] || {});
-        if (r.kind === 'sizes') P.sizes = Object.assign({}, P.sizes, r.fields); else Object.assign(P, r.fields); });
+        if (r.kind === 'sizes') P.sizes = Object.assign({}, P.sizes, r.fields);
+        else if (r.kind === 'names') P.middle = ctMiddle(r.fields.legal, R.swimmers[r.sid] || {});
+        else Object.assign(P, r.fields); });
       [...new Set(rows.map(r => r.kind))].forEach(k => { c.files[k] = { name: rows.find(r => r.kind === k).file, date: new Date().toISOString().slice(0, 10) }; });
     });
     _ctImp = null;
@@ -3997,7 +4013,7 @@ async function ctApplyImport() {
 async function ctRenderUploadInfo() {
   const el = document.getElementById('ctFiles'); if (!el) return;
   try { const c = await ctLoad(); const f = c.files || {};
-    el.textContent = [f.address ? `Contacts: ${f.address.name} (${f.address.date})` : '', f.sizes ? `Sizes: ${f.sizes.name} (${f.sizes.date})` : ''].filter(Boolean).join(' · ') || 'Nothing uploaded yet.';
+    el.textContent = [f.address ? `Contacts: ${f.address.name} (${f.address.date})` : '', f.sizes ? `Sizes: ${f.sizes.name} (${f.sizes.date})` : '', f.names ? `Middle names: ${f.names.name} (${f.names.date})` : ''].filter(Boolean).join(' · ') || 'Nothing uploaded yet.';
   } catch (e) { el.textContent = ''; }
 }
 
