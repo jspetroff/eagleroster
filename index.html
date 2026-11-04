@@ -186,9 +186,10 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
 .tbl.d3list tr.d3row-g td{background:rgba(76,175,125,.22);}
 .tbl.d3list tr.d3row-y td{background:rgba(232,197,71,.24);}
 .tbl.d3list tr.d3row-r td{background:rgba(224,92,92,.20);}
+.tbl tr.urow-a td{background:rgba(76,175,125,.2);} .tbl tr.urow-b td{background:rgba(232,197,71,.2);} .tbl tr.urow-c td{background:rgba(230,140,60,.18);} .tbl tr.urow-off td{opacity:.45;}
 .uchip{font-family:var(--fm);font-size:.72rem;padding:.12rem .45rem;border-radius:4px;white-space:nowrap;} .u-a{background:rgba(76,175,125,.32);} .u-b{background:rgba(232,197,71,.32);} .u-c{background:rgba(230,140,60,.3);} .u-x{background:rgba(120,120,140,.2);} .u-rel{font-style:italic;} .u-off{opacity:.35;}
 .d3chip{font-family:var(--fm);font-size:.72rem;padding:.12rem .45rem;border-radius:4px;white-space:nowrap;} .d3c-g{background:rgba(76,175,125,.3);} .d3c-y{background:rgba(232,197,71,.32);} .d3c-r{background:rgba(224,92,92,.26);}
-@media print{.upchip{padding:0 3px;border-radius:2px;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .up-a{background:#cfead9!important;} .up-b{background:#f6e7a8!important;} .up-c{background:#f7d3b0!important;} .d3pchip{padding:0 3px;border-radius:2px;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3p-g{background:#cfead9!important;} .d3p-y{background:#f6e7a8!important;} .d3p-r{background:#f2c4c0!important;} table.pt.d3sw td{padding:2px 4px;line-height:1.6;} .d3print tr td{-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3print tr.d3row-g td{background:#cfead9!important;} .d3print tr.d3row-y td{background:#f6e7a8!important;} .d3print tr.d3row-r td{background:#f2c4c0!important;}}
+@media print{.d3print tr.upr-a td{background:#cfead9!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3print tr.upr-b td{background:#f6e7a8!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3print tr.upr-c td{background:#f7d3b0!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .upchip{padding:0 3px;border-radius:2px;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .up-a{background:#cfead9!important;} .up-b{background:#f6e7a8!important;} .up-c{background:#f7d3b0!important;} .d3pchip{padding:0 3px;border-radius:2px;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3p-g{background:#cfead9!important;} .d3p-y{background:#f6e7a8!important;} .d3p-r{background:#f2c4c0!important;} table.pt.d3sw td{padding:2px 4px;line-height:1.6;} .d3print tr td{-webkit-print-color-adjust:exact;print-color-adjust:exact;} .d3print tr.d3row-g td{background:#cfead9!important;} .d3print tr.d3row-y td{background:#f6e7a8!important;} .d3print tr.d3row-r td{background:#f2c4c0!important;}}
 .badge.std{margin-left:.35rem;border:1px solid currentColor;}
 .badge.stdA{background:#e05c5c;color:#fff;border-color:#e05c5c;}
 .badge.stdQ{color:var(--green);background:rgba(76,175,125,.12);}
@@ -543,7 +544,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
     <div class="fpill" data-v="split" onclick="setTT('kind','split',this)">Relay Splits</div>
     <div class="fpill" data-v="relay" onclick="setTT('kind','relay',this)">Relays</div>
     <div class="fpill" data-v="d3list" onclick="setTT('kind','d3list',this)">NCAA DIII</div>
-    <div class="fpill" data-v="uaa" onclick="setTT('kind','uaa',this)">UAA roster</div>
+    <div class="fpill" data-v="uaa" onclick="setTT('kind','uaa',this)">UAA</div>
   </div>
   <div class="fbar" id="ttCodeBar">
     <span style="font-size:.7rem;color:var(--text-dim);font-family:var(--fm);align-self:center">Codes:</span>
@@ -2136,15 +2137,17 @@ function parseUsasTopTimes(pages) {
       const rows = [];
       ci.forEach(it => { let r = rows.find(r => Math.abs(r.y - it.y) < 2.5); if (!r) rows.push(r = { y: it.y, items: [] }); r.items.push(it); });
       rows.sort((a, b) => b.y - a.y);
-      let ev = null, rel = null;
+      let ev = null, rel = null, cur = null;
       rows.forEach(r => {
         const t = r.items.sort((a, b) => a.x - b.x).map(i => i.str.trim());
         const h = t.join(' ').match(/^(\d+)\s+(FR|BK|BR|FL|IM|FR-R|MED-R)\s+SCY$/);
-        if (h) { ev = /-R$/.test(h[2]) ? null : `${+h[1]} ${STK[h[2]]}`; rel = /-R$/.test(h[2]) ? `${+h[1]} ${h[2] === 'MED-R' ? 'Medley' : 'Free'} Relay` : null; return; }
-        if (rel) {   // relay: "# time names… team TS date" on the first line; the names wrap onto lines below (ignored)
+        if (h) { ev = /-R$/.test(h[2]) ? null : `${+h[1]} ${STK[h[2]]}`; rel = /-R$/.test(h[2]) ? `${+h[1]} ${h[2] === 'MED-R' ? 'Medley' : 'Free'} Relay` : null; cur = null; return; }
+        if (rel) {   // relay: "# time names… team TS date" on the first line; the rest of the names wrap onto the lines below
           const di = t.length - 1;
-          if (/^\d+$/.test(t[0]) && /^(?:\d+:)?\d+\.\d\d/.test(t[1] || '') && /^\d+\/\d+\/\d+$/.test(t[di]))
-            (out.relays[rel] = out.relays[rel] || []).push({ r: +t[0], t: t[1].replace(/(?:[a-z]|\([a-z]\))+$/, ''), tm: t[di - 2] || '', d: t[di] });
+          if (/^\d+$/.test(t[0]) && /^(?:\d+:)?\d+\.\d\d/.test(t[1] || '') && /^\d+\/\d+\/\d+$/.test(t[di])) {
+            cur = { r: +t[0], t: t[1].replace(/(?:[a-z]|\([a-z]\))+$/, ''), tm: t[di - 2] || '', d: t[di], names: t.slice(2, di - 2).join(' ') };
+            (out.relays[rel] = out.relays[rel] || []).push(cur);
+          } else if (cur && t[0] !== '#' && !/^\(c\)/.test(t[0])) cur.names += ' ' + t.join(' ');
           return;
         }
         if (!ev || !/^\d+$/.test(t[0]) || !/^(?:\d+:)?\d+\.\d\d(?:[a-z]|\([a-z]\))*$/.test(t[1] || '')) return;
@@ -4093,111 +4096,181 @@ const uaaRelaysOn = () => (R.uaaCfg || {}).relays !== false;
 function uaaSetRelays(on) { R.uaaCfg = R.uaaCfg || {}; R.uaaCfg.relays = !!on; save(); renderUaa(); }
 const uaaSwimSpots = g => UAA_SPOTS - Math.ceil(uaaDivers(g) / 3);   // 3 divers take one roster spot
 
-function uaaProject(g, U) {
-  const season = U.season, place = n => n, ord = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
-  // the field: everyone else on the report, each in their best 3 events by report rank
-  const others = [], emoryRep = {};
+const uaaShort = n => n.replace(' Free Relay', ' FR').replace(' Medley Relay', ' MR');
+// One model of the projected UAA meet (per gender), shared by the three views:
+//  1. every swimmer on the report (Emory: every active, non-diving swimmer at their best time this season) picks their
+//     best 3 events by where they'd place;
+//  2. those entries are placed and scored (UAA 24 places); each team keeps its top N swimmers by those points
+//     (N = our swimmer spots), and the places are worked out again with just those;
+//  3. relays: each team's fastest relay on the report is its A relay (ours: the Relays tab's fastest A and B), A relays
+//     place 1–8, our B relay from 9th against the other teams' A times; legs get ¼ of the points.
+// Team scores = individual points of each team's top N + A relays (the report has no B relays or diving).
+const uaaKey = (tm, n) => tm + '|' + nmNorm(n);
+const uaaOrd = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+function uaaModel(g, U) {
+  const season = U.season, spots = uaaSwimSpots(g), relOn = uaaRelaysOn();
+  const faster = (list, sec, self) => list.filter(x => x.sec < sec - 0.001 && x.key !== self).length;
+  const teamsOnReport = new Set();
+  UAA_EVS.forEach(ev => ((U.events || {})[ev] || []).forEach(r => teamsOnReport.add(r.tm)));
+  Object.values(U.relays || {}).forEach(l => l.forEach(r => teamsOnReport.add(r.tm)));
+  const EM = [...teamsOnReport].find(t => /^emory/i.test(t)) || 'Emory';
+  const S = {};
+  const add = (key, team, name, sid) => (S[key] = S[key] || { key, team, name, sid, times: {}, rank: {}, src: {} });
+  const ours = Object.values(R.swimmers).filter(s => s.gender === g && isActive(s) && !isDiver(s));
+  ours.forEach(s => add('E|' + s.id, EM, s.first + ' ' + s.last, s.id));
   UAA_EVS.forEach(ev => ((U.events || {})[ev] || []).forEach(r => {
     const sec = timeToSec(r.t); if (!sec) return;
-    if (/^emory/i.test(r.tm)) { const sid = d3Sid(r.n, g); if (sid) { const k = sid + '|' + ev; if (!(k in emoryRep) || sec < emoryRep[k]) emoryRep[k] = sec; return; } }
-    others.push({ who: r.tm + '|' + r.n, ev, sec, rank: r.r });
+    const sid = /^emory/i.test(r.tm) ? d3Sid(r.n, g) : null;
+    const p = sid && S['E|' + sid] ? S['E|' + sid] : add(uaaKey(r.tm, r.n), r.tm, r.n, null);
+    if (!p.times[ev] || sec < p.times[ev]) { p.times[ev] = sec; p.rank[ev] = r.r; p.src[ev] = 'report'; }
   }));
-  const byWho = {}; others.forEach(o => (byWho[o.who] = byWho[o.who] || []).push(o));
-  const field = {}; Object.values(byWho).forEach(l => l.sort((a, b) => a.rank - b.rank).slice(0, 3).forEach(o => (field[o.ev] = field[o.ev] || []).push(o.sec)));
-  const faster = (list, sec) => (list || []).filter(x => x < sec - 0.001).length;
-  // Emory: best time this season per event (report or imported swims), active swimmers, no divers
-  const us = {};
-  Object.values(R.swimmers).filter(s => s.gender === g && isActive(s) && !isDiver(s)).forEach(s => { us[s.id] = {}; });
-  (R.swims || []).forEach(w => { if (w.kind !== 'ind' || seasonOf(w.date) !== season || !us[w.sid] || !UAA_EVS.includes(w.event)) return;
-    const sec = timeToSec(w.time); if (sec && (!us[w.sid][w.event] || sec < us[w.sid][w.event])) us[w.sid][w.event] = sec; });
-  Object.entries(emoryRep).forEach(([k, sec]) => { const [sid, ev] = k.split('|'); if (us[sid] && (!us[sid][ev] || sec < us[sid][ev])) us[sid][ev] = sec; });
-  // pass 1: place vs the other teams only → each teammate's likely 3 events
-  const team = {};
-  Object.entries(us).forEach(([sid, evs]) => Object.entries(evs).map(([ev, sec]) => ({ ev, sec, p: 1 + faster(field[ev], sec) }))
-    .sort((a, b) => a.p - b.p).slice(0, 3).forEach(x => (team[x.ev] = team[x.ev] || []).push({ sid, sec: x.sec })));
-  // pass 2: final places, counting teammates in their 3 events
-  const res = {};
-  Object.entries(us).forEach(([sid, evs]) => {
-    const ind = Object.entries(evs).map(([ev, sec]) => {
-      const p = 1 + faster(field[ev], sec) + (team[ev] || []).filter(x => x.sid !== sid && x.sec < sec - 0.001).length;
-      return { ev, sec, place: p, pts: UAA_PTS.ind[p - 1] || 0 };
-    }).sort((a, b) => b.pts - a.pts || a.place - b.place);
-    res[sid] = { sid, ind, rel: [] };
+  (R.swims || []).forEach(w => {
+    const p = S['E|' + w.sid]; if (!p || w.kind !== 'ind' || seasonOf(w.date) !== season || !UAA_EVS.includes(w.event)) return;
+    const sec = timeToSec(w.time); if (sec && (!p.times[w.event] || sec < p.times[w.event] - 0.001)) { p.times[w.event] = sec; p.src[w.event] = 'newer'; p.meet = p.meet || {}; p.meet[w.event] = w.meet; }
   });
-  // relays: Relays-tab fastest A and B for this season vs the other teams' A (fastest) and B (second fastest)
+  const all = Object.values(S);
+  const fieldOf = list => { const f = {}; list.forEach(p => (p.pick || []).forEach(ev => (f[ev] = f[ev] || []).push({ key: p.key, sec: p.times[ev] }))); return f; };
+  // 1. everyone's best 3 events, by place among all times
+  const raw = {}; all.forEach(p => Object.entries(p.times).forEach(([ev, sec]) => (raw[ev] = raw[ev] || []).push({ key: p.key, sec })));
+  all.forEach(p => { p.pick = Object.keys(p.times).sort((a, b) => faster(raw[a], p.times[a], p.key) - faster(raw[b], p.times[b], p.key)).slice(0, 3); });
+  // 2. score, keep each team's top N, score again
+  const score = (p, field) => Object.entries(p.times).map(([ev, sec]) => { const place = 1 + faster(field[ev] || [], sec, p.key); return { ev, sec, place, pts: UAA_PTS.ind[place - 1] || 0, src: p.src[ev] }; })
+    .sort((a, b) => b.pts - a.pts || a.place - b.place);
+  let field = fieldOf(all);
+  all.forEach(p => { p.ind = score(p, field); p.indTop = p.ind.filter(x => p.pick.includes(x.ev)).reduce((a, x) => a + x.pts, 0); });
+  const byTeam = {}; all.forEach(p => (byTeam[p.team] = byTeam[p.team] || []).push(p));
+  const kept = new Set();
+  Object.values(byTeam).forEach(l => l.slice().sort((a, b) => b.indTop - a.indTop).slice(0, spots).forEach(p => kept.add(p.key)));
+  field = fieldOf(all.filter(p => kept.has(p.key)));
+  all.forEach(p => { p.ind = score(p, field); p.rel = []; });
+  // 3. relays
   const keep = { season: _rl.season, code: _rl.code };
   _rl.season = season; _rl.code = 'all';
   let bank; try { bank = relayBank(g); } finally { _rl.season = keep.season; _rl.code = keep.code; }
   const relays = [];
   RELAY_DEFS.forEach(def => {
-    const list = (U.relays || {})[def.name] || [], byTeam = {};
-    list.filter(r => !/^emory/i.test(r.tm)).forEach(r => (byTeam[r.tm] = byTeam[r.tm] || []).push(timeToSec(r.t)));
-    // the report lists only each team's fastest relay, so B relays are placed against the other teams' A times (from 9th) —
-    // conservative, since their real B relays are slower; a team's second relay is used when the report has one
-    const A = [], B = []; Object.values(byTeam).forEach(ts => { ts.sort((a, b) => a - b); if (ts[0]) A.push(ts[0]); B.push(ts[1] || ts[0]); });
-    const ours = buildBest(bank, def, 2);
-    ours.forEach((order, i) => {
-      const t = relayTotal(bank, def, order); if (t == null) return;
-      const p = i === 0 ? 1 + faster(A, t) : 9 + faster(B, t), pts = UAA_PTS.rel[p - 1] || 0;
-      relays.push({ name: def.name, letter: i ? 'B' : 'A', time: t, place: p, pts, order });
-      order.forEach(sid => { if (res[sid]) res[sid].rel.push({ name: def.name, letter: i ? 'B' : 'A', place: p, pts: pts / 4 }); });
+    const A = [];   // {team, sec, legs:[key]}
+    const best = {}; ((U.relays || {})[def.name] || []).forEach(r => { const sec = timeToSec(r.t); if (sec && (!best[r.tm] || sec < best[r.tm].sec)) best[r.tm] = { team: r.tm, sec, names: r.names }; });
+    Object.values(best).filter(b => b.team !== EM).forEach(b => A.push({ team: b.team, sec: b.sec,
+      legs: String(b.names || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 4).map(n => add(uaaKey(b.team, n), b.team, n, null).key) }));
+    const ourRel = buildBest(bank, def, 2).map(order => ({ order, sec: relayTotal(bank, def, order) })).filter(x => x.sec != null);
+    if (ourRel[0]) A.push({ team: EM, sec: ourRel[0].sec, legs: ourRel[0].order.map(sid => 'E|' + sid), ours: true });
+    else if (best[EM]) A.push({ team: EM, sec: best[EM].sec, legs: [], ours: true });
+    A.sort((a, b) => a.sec - b.sec).forEach((x, i) => {
+      const place = 1 + A.filter(y => y.sec < x.sec - 0.001).length, pts = UAA_PTS.rel[place - 1] || 0;
+      relays.push({ name: def.name, team: x.team, letter: 'A', sec: x.sec, place, pts });
+      x.legs.forEach(k => { if (S[k]) { S[k].rel = S[k].rel || []; S[k].rel.push({ name: def.name, letter: 'A', place, pts: pts / 4 }); } });
     });
+    if (ourRel[1]) {   // our B relay: B final, against the other teams' A times
+      const place = 9 + A.filter(y => y.team !== EM && y.sec < ourRel[1].sec - 0.001).length, pts = UAA_PTS.rel[place - 1] || 0;
+      relays.push({ name: def.name, team: EM, letter: 'B', sec: ourRel[1].sec, place, pts, bOnly: true });
+      ourRel[1].order.forEach(sid => { const p = S['E|' + sid]; if (p) p.rel.push({ name: def.name, letter: 'B', place, pts: pts / 4 }); });
+    }
   });
-  // best total: 3 individual + 4 relays, or 2 + 5 (relay credit off: best 3 individual)
-  const relOn = uaaRelaysOn();
-  const rows = Object.values(res).map(r => {
-    const rel = relOn ? r.rel.slice().sort((a, b) => b.pts - a.pts) : [], sum = a => a.reduce((x, y) => x + y.pts, 0);
-    const opts = (relOn ? [[3, 4], [2, 5]] : [[3, 0]]).map(([i, k]) => ({ i, k, total: sum(r.ind.slice(0, i)) + sum(rel.slice(0, k)) })).sort((a, b) => b.total - a.total);
-    const o = opts[0];
-    return { ...r, rel, nInd: o.i, nRel: o.k, total: o.total, indPts: sum(r.ind.slice(0, o.i)), relPts: sum(rel.slice(0, o.k)) };
-  }).sort((a, b) => b.total - a.total || (R.swimmers[a.sid].last + R.swimmers[a.sid].first).localeCompare(R.swimmers[b.sid].last + R.swimmers[b.sid].first));
-  return { rows, relays, ord };
+  // per-swimmer totals: 3 individual + 4 relays, or 2 + 5 (relay credit off: best 3 individual)
+  const sum = a => a.reduce((x, y) => x + y.pts, 0);
+  Object.values(S).forEach(p => {
+    p.ind = p.ind || []; p.rel = (relOn ? (p.rel || []) : []).slice().sort((a, b) => b.pts - a.pts);
+    const o = (relOn ? [[3, 4], [2, 5]] : [[3, 0]]).map(([i, k]) => ({ i, k, total: sum(p.ind.slice(0, i)) + sum(p.rel.slice(0, k)) })).sort((a, b) => b.total - a.total)[0];
+    p.nInd = o.i; p.nRel = o.k; p.total = o.total;
+  });
+  // team scores: top N individual (their 3 picked events, as entered) + A relays
+  const teams = [...new Set(Object.values(S).map(p => p.team))].map(team => {
+    const ind = Object.values(S).filter(p => p.team === team && kept.has(p.key)).reduce((a, p) => a + p.ind.filter(x => (p.pick || []).includes(x.ev)).reduce((b, x) => b + x.pts, 0), 0);
+    const rel = relays.filter(r => r.team === team && r.letter === 'A').reduce((a, r) => a + r.pts, 0);
+    return { team, ind, rel, total: ind + rel, swimmers: Object.values(S).filter(p => p.team === team && kept.has(p.key)).length };
+  }).filter(t => t.total > 0 || teamsOnReport.has(t.team)).sort((a, b) => b.total - a.total);
+  return { S, EM, field, kept, relays, teams, spots };
+}
+function uaaRoster(M, team) {
+  return Object.values(M.S).filter(p => p.team === team).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 }
 
-const uaaShort = n => n.replace(' Free Relay', ' FR').replace(' Medley Relay', ' MR');
+let _uaav = { view: 'roster', team: '', evTeam: '' };
 function renderUaa() {
   if (_tt.kind !== 'uaa') return;
   const box = document.getElementById('ttList'); if (!box) return;
   const g = _tt.gender, U = window._uaa[g];
-  const msg = t => `<div class="card"><div class="ct">UAA projected roster — ${g === 'W' ? 'Women' : 'Men'}</div><div style="color:var(--text-dim);font-size:.82rem">${t}</div></div>`;
+  const msg = t => `<div class="card"><div class="ct">UAA — ${g === 'W' ? 'Women' : 'Men'}</div><div style="color:var(--text-dim);font-size:.82rem">${t}</div></div>`;
   if (U === undefined) { box.innerHTML = msg('Loading…'); uaaLoad(g); return; }
   if (!U) { box.innerHTML = msg(`Upload the ${g === 'W' ? "women's" : "men's"} USA Swimming top-times report filtered to the UAA (⇧ UAA, above).`); return; }
-  const P = uaaProject(g, U), spots = uaaSwimSpots(g), ord = P.ord;
-  window._uaaLast = { g, P, U, spots };
+  const M = uaaModel(g, U), spots = M.spots, ord = uaaOrd;
+  const teamNames = M.teams.map(t => t.team);
+  if (!_uaav.team || !teamNames.includes(_uaav.team)) _uaav.team = M.EM;
+  if (_uaav.evTeam && !teamNames.includes(_uaav.evTeam)) _uaav.evTeam = '';
+  window._uaaLast = { g, M, U, spots, view: _uaav.view, team: _uaav.team, evTeam: _uaav.evTeam };
   const fin = p => p <= 8 ? 'a' : p <= 16 ? 'b' : p <= 24 ? 'c' : 'x';
-  const chip = (x, used) => `<span class="uchip u-${fin(x.place)}${used ? '' : ' u-off'}" title="${used ? '' : 'not counted — over the event limit · '}${x.sec ? secToTime(x.sec) : ''}">${ord(x.place)} ${esc(x.ev)} · ${x.pts}</span>`;
-  const rchip = (x, used) => `<span class="uchip u-${fin(x.place)} u-rel${used ? '' : ' u-off'}">${x.letter} ${uaaShort(x.name)} ${ord(x.place)} · ${+x.pts.toFixed(2)}</span>`;
-  const row = (r, i) => { const s = R.swimmers[r.sid];
-    return `<div class="imp-row" style="align-items:flex-start${i >= spots ? ';opacity:.6' : ''}">
-      <span style="width:1.8rem;flex:none;font-family:var(--fm);font-size:.72rem;color:var(--text-dim);text-align:right;padding-right:.4rem">${i + 1}</span>
-      <span style="width:11rem;flex:none;font-weight:700;font-size:.82rem">${esc(s.first + ' ' + s.last)} ${classBadge(s)}</span>
-      <span style="width:4rem;flex:none;font-family:var(--fm);font-weight:700;text-align:right;padding-right:.6rem">${+r.total.toFixed(2)}</span>
-      <span style="display:flex;flex-wrap:wrap;gap:.3rem;flex:1">${r.ind.filter(x => x.pts).map((x, k) => chip(x, k < r.nInd)).join('')}${r.rel.map((x, k) => rchip(x, k < r.nRel)).join('')}${!r.ind.some(x => x.pts) && !r.rel.length ? '<span style="font-size:.72rem;color:var(--text-dim)">no scoring swims projected</span>' : ''}</span></div>`; };
-  const list = P.rows.map((r, i) => (i === spots ? `<div style="border-top:2px dashed var(--gold);margin:.4rem 0;padding-top:.3rem;font-size:.7rem;color:var(--gold);font-family:var(--fm)">— ${spots} swimmer spots${uaaDivers(g) ? ` + ${uaaDivers(g)} diver${uaaDivers(g) === 1 ? '' : 's'}` : ''} (22) —</div>` : '') + row(r, i)).join('');
-  const inPts = P.rows.slice(0, spots).reduce((a, r) => a + r.total, 0);
   const [y, m, dd] = U.date.split('-');
-  box.innerHTML = `<div class="card" style="grid-column:1/-1">
+  const pill = (v, l) => `<div class="fpill ${_uaav.view === v ? 'act' : ''}" onclick="_uaav.view='${v}';renderUaa()">${l}</div>`;
+  const teamSel = (key, withAll) => `<select onchange="_uaav.${key}=this.value;renderUaa()" style="width:auto;max-width:200px">${withAll ? '<option value="">All teams</option>' : ''}${teamNames.map(t => `<option value="${esc(t)}" ${t === _uaav[key] ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+  const head = `<div class="card" style="grid-column:1/-1">
       <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;font-size:.8rem">
-        <span>Divers going:</span><input type="number" min="0" max="9" value="${uaaDivers(g)}" onchange="uaaSetDivers('${g}',this.value)" style="width:4rem;padding:.25rem .4rem">
-        <span style="color:var(--text-dim)">3 divers = 1 roster spot → <b>${spots}</b> swimmer spots</span>
-        <label class="check-item" style="font-size:.8rem;margin-left:.8rem"><input type="checkbox" ${uaaRelaysOn() ? 'checked' : ''} onchange="uaaSetRelays(this.checked)"> Relay credit</label></div>
-      <div style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm);line-height:1.5">UAA report ${+m}/${+dd}/${y} (${esc(U.file)}) · projected places in the NCAA championship events, UAA scoring (24 places; relays 16).
-        Emory at best time this season · others in their best 3 events · relay A/B = Relays tab's fastest; B relays stay in the B final (9th at best) and are placed against the other teams' fastest relays, since the report lists only those — so B places are conservative; ¼ of relay points per leg · best of 3 ind + 4 relays or 2 + 5 counts. Dimmed tags aren't counted.</div>
-      <div style="font-size:.7rem;margin-top:.4rem;display:flex;gap:.6rem;flex-wrap:wrap"><span class="uchip u-a">A final 1–8</span><span class="uchip u-b">B final 9–16</span><span class="uchip u-c">C final 17–24</span></div>
-    </div>
-    <div class="card" style="grid-column:1/-1;font-size:.85rem"><b>Top ${spots}: ${Math.round(inPts)} projected points</b> <span style="color:var(--text-dim)">${uaaRelaysOn() ? `(individual + relay credit; relays: ${P.relays.map(r => `${r.letter} ${uaaShort(r.name)} ${ord(r.place)}`).join(', ') || 'none'})` : '(individual only — best 3 events; relay credit off)'}</span></div>
-    <div class="card" style="grid-column:1/-1">${list || '<div style="color:var(--text-dim);font-size:.82rem">No swimmers.</div>'}</div>`;
+        <div class="fbar" style="margin:0">${pill('roster', 'Roster')}${pill('event', 'By event')}${pill('teams', 'Team scores')}</div>
+        ${_uaav.view === 'roster' ? teamSel('team') : _uaav.view === 'event' ? teamSel('evTeam', true) : ''}
+        <span style="margin-left:.4rem">Divers going:</span><input type="number" min="0" max="9" value="${uaaDivers(g)}" onchange="uaaSetDivers('${g}',this.value)" style="width:4rem;padding:.25rem .4rem">
+        <span style="color:var(--text-dim)">→ <b>${spots}</b> swimmer spots</span>
+        ${_uaav.view === 'teams' ? '' : `<label class="check-item" style="font-size:.8rem;margin-left:.4rem"><input type="checkbox" ${uaaRelaysOn() ? 'checked' : ''} onchange="uaaSetRelays(this.checked)"> Relay credit</label>`}</div>
+      <div style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm);line-height:1.5">UAA report ${+m}/${+dd}/${y} · NCAA championship events, UAA scoring (24 places; relays 16) · Emory at best time this season ·
+        everyone swims their best 3 events; each team's top ${spots} swimmers score · relays: each team's fastest on the report (ours: Relays tab's A and B; B relays from 9th, against the other teams' fastest) · ¼ of relay points per leg.</div>
+      <div style="font-size:.7rem;margin-top:.4rem;display:flex;gap:.6rem;flex-wrap:wrap"><span class="uchip u-a">A final 1–8</span><span class="uchip u-b">B final 9–16</span><span class="uchip u-c">C final 17–24</span></div></div>`;
+  let body = '';
+  if (_uaav.view === 'teams') {
+    body = `<div class="card" style="grid-column:1/-1"><div class="ct">Projected team scores — swimming</div>
+      <table class="tbl"><thead><tr><th>#</th><th>Team</th><th style="text-align:right">Total</th><th style="text-align:right">Individual</th><th style="text-align:right">A relays</th><th style="text-align:right">Swimmers scoring</th></tr></thead><tbody>${
+      M.teams.map((t, i) => `<tr style="${t.team === M.EM ? 'font-weight:700' : ''}"><td class="tt-rank">${i + 1}</td><td><a href="#" onclick="_uaav.view='roster';_uaav.team='${esc(t.team).replace(/'/g, "\\'")}';renderUaa();return false" style="color:inherit">${esc(t.team)}</a></td>
+        <td class="ttime" style="text-align:right">${Math.round(t.total)}</td><td class="ttime" style="text-align:right">${Math.round(t.ind)}</td><td class="ttime" style="text-align:right">${Math.round(t.rel)}</td><td class="ttime" style="text-align:right">${M.S && Object.values(M.S).filter(p => p.team === t.team && M.kept.has(p.key) && p.ind.some(x => (p.pick || []).includes(x.ev) && x.pts)).length}</td></tr>`).join('')}</tbody></table>
+      <div style="font-size:.72rem;color:var(--text-dim);margin-top:.5rem">Individual points of each team's top ${spots} swimmers in their best 3 events, plus A relays. B relays and diving aren't included — the report has no B relays or diving. Tap a team to see its roster.</div></div>`;
+  } else if (_uaav.view === 'event') {
+    const cards = UAA_EVS.filter(ev => ((U.events || {})[ev] || []).length || Object.values(M.S).some(p => p.times[ev])).map(ev => {
+      const entries = Object.values(M.S).filter(p => p.times[ev] && (!_uaav.evTeam || p.team === _uaav.evTeam)).map(p => {
+        const sc = p.ind.find(x => x.ev === ev), proj = M.kept.has(p.key) && (p.pick || []).includes(ev);
+        return { p, sec: p.times[ev], rank: p.rank[ev], newer: p.src[ev] === 'newer', proj, sc };
+      }).sort((a, b) => a.sec - b.sec);
+      if (!entries.length) return '';
+      return `<div class="card"><div class="ct" style="display:flex;justify-content:space-between"><span>${esc(ev)}</span><span>${entries.filter(e => e.proj).length} projected</span></div>
+        <table class="tbl"><tbody>${entries.map(e => `<tr class="${e.proj ? 'urow-' + fin(e.sc.place) : 'urow-off'}"${e.newer ? ' style="font-style:italic"' : ''}>
+          <td class="tt-rank">${e.rank && !e.newer ? e.rank : '~'}</td>
+          <td><div style="font-size:.8rem;font-weight:${e.p.team === M.EM ? 700 : 600}">${esc(e.p.name)}</div><div class="tt-meet">${esc(e.p.team)}${e.newer ? ' · newer swim' : ''}</div></td>
+          <td class="ttime" style="text-align:right;white-space:nowrap">${secToTime(e.sec)}</td>
+          <td style="text-align:right;white-space:nowrap;font-family:var(--fm);font-size:.72rem">${e.proj ? `${ord(e.sc.place)} · ${e.sc.pts}` : '<span style="color:var(--text-dim)">—</span>'}</td></tr>`).join('')}</tbody></table></div>`;
+    }).join('');
+    body = `<div class="card" style="grid-column:1/-1;font-size:.75rem;color:var(--text-dim)">Every time on the report (Emory: best this season, <i>italic</i> = newer than the report). Right column: projected place and points for swimmers projected to swim that event (their best 3, on their team's top ${spots}); grey rows aren't projected to swim it.</div>${cards}`;
+  } else {
+    const rows = uaaRoster(M, _uaav.team), isEm = _uaav.team === M.EM;
+    const chip = (x, used) => `<span class="uchip u-${fin(x.place)}${used ? '' : ' u-off'}" title="${secToTime(x.sec)}${used ? '' : ' · not counted'}">${ord(x.place)} ${esc(x.ev)} · ${x.pts}</span>`;
+    const rchip = (x, used) => `<span class="uchip u-${fin(x.place)} u-rel${used ? '' : ' u-off'}">${x.letter} ${uaaShort(x.name)} ${ord(x.place)} · ${+x.pts.toFixed(2)}</span>`;
+    const row = (p, i) => { const s = p.sid && R.swimmers[p.sid];
+      return `<div class="imp-row" style="align-items:flex-start${i >= spots ? ';opacity:.6' : ''}">
+        <span style="width:1.8rem;flex:none;font-family:var(--fm);font-size:.72rem;color:var(--text-dim);text-align:right;padding-right:.4rem">${i + 1}</span>
+        <span style="width:11rem;flex:none;font-weight:700;font-size:.82rem">${esc(p.name)} ${s ? classBadge(s) : ''}</span>
+        <span style="width:4rem;flex:none;font-family:var(--fm);font-weight:700;text-align:right;padding-right:.6rem">${+p.total.toFixed(2)}</span>
+        <span style="display:flex;flex-wrap:wrap;gap:.3rem;flex:1">${p.ind.filter(x => x.pts).map((x, k) => chip(x, k < p.nInd)).join('')}${p.rel.map((x, k) => rchip(x, k < p.nRel)).join('')}${!p.ind.some(x => x.pts) && !p.rel.length ? '<span style="font-size:.72rem;color:var(--text-dim)">no scoring swims projected</span>' : ''}</span></div>`; };
+    const nDiv = isEm ? uaaDivers(g) : null;
+    const list = rows.map((p, i) => (i === spots ? `<div style="border-top:2px dashed var(--gold);margin:.4rem 0;padding-top:.3rem;font-size:.7rem;color:var(--gold);font-family:var(--fm)">— ${spots} swimmer spots${isEm && nDiv ? ` + ${nDiv} diver${nDiv === 1 ? '' : 's'}` : ''} —</div>` : '') + row(p, i)).join('');
+    const inPts = rows.slice(0, spots).reduce((a, p) => a + p.total, 0);
+    body = `<div class="card" style="grid-column:1/-1;font-size:.85rem"><b>${esc(_uaav.team)} — top ${spots}: ${Math.round(inPts)} projected points</b> <span style="color:var(--text-dim)">${uaaRelaysOn() ? `(individual + relay credit${isEm ? '' : '; their A relays from the report'})` : '(individual only — relay credit off)'}</span></div>
+      <div class="card" style="grid-column:1/-1">${list || '<div style="color:var(--text-dim);font-size:.82rem">No swimmers.</div>'}</div>`;
+  }
+  box.innerHTML = head + body;
 }
 function uaaPrintHtml() {
   const L = window._uaaLast; if (!L) return '';
-  const { g, P, U, spots } = L, ord = P.ord, fin = p => p <= 8 ? 'a' : p <= 16 ? 'b' : p <= 24 ? 'c' : 'x';
-  const rows = P.rows.map((r, i) => { const s = R.swimmers[r.sid];
-    return (i === spots ? `<tr><td colspan="4" style="border-top:2px dashed #000;font-size:8px;padding:2px 0">— ${spots} swimmer spots + ${uaaDivers(g)} divers —</td></tr>` : '') +
-      `<tr${i >= spots ? ' style="color:#555"' : ''}><td class="r" style="width:20px">${i + 1}</td><td class="n" style="width:24%;font-weight:700">${esc(s.first + ' ' + s.last)}</td><td class="r" style="width:40px"><b>${+r.total.toFixed(1)}</b></td>
-      <td style="white-space:normal">${r.ind.filter(x => x.pts).slice(0, r.nInd).map(x => `<span class="upchip up-${fin(x.place)}">${ord(x.place)} ${esc(x.ev)} ${x.pts}</span>`).join(' ')} ${r.rel.slice(0, r.nRel).map(x => `<span class="upchip up-${fin(x.place)}"><i>${x.letter} ${uaaShort(x.name)} ${ord(x.place)} ${+x.pts.toFixed(1)}</i></span>`).join(' ')}</td></tr>`; }).join('');
-  return `<div class="ph"><b>UAA projected roster — ${g === 'W' ? 'Women' : 'Men'}</b> &nbsp;UAA report ${U.date} · printed ${new Date().toLocaleDateString()}</div>
-    <div class="pm">${uaaRelaysOn() ? '' : '<b>Relay credit off — individual points only (best 3 events).</b> '}Points = projected UAA individual points (best 3, or 2 with 5 relays) + ¼ of relay points for A/B relays (Relays tab's fastest; B relays 9th at best, placed against the other teams' fastest relays). Green = A final, yellow = B, orange = C.</div>
-    <table class="pt d3sw" style="font-size:9.5px">${rows}</table>`;
+  const { g, M, U, spots, view } = L, ord = uaaOrd, fin = p => p <= 8 ? 'a' : p <= 16 ? 'b' : p <= 24 ? 'c' : 'x', G = g === 'W' ? 'Women' : 'Men';
+  const hdr = t => `<div class="ph"><b>${t} — ${G}</b> &nbsp;UAA report ${U.date} · printed ${new Date().toLocaleDateString()}</div>`;
+  if (view === 'teams') return hdr('UAA projected team scores') + `<div class="pm">Swimming only: each team's top ${spots} swimmers in their best 3 events + A relays (no B relays or diving on the report).</div>
+    <table class="pt st"><tr><th>#</th><th>Team</th><th class="r">Total</th><th class="r">Individual</th><th class="r">A relays</th></tr>${M.teams.map((t, i) => `<tr${t.team === M.EM ? ' style="font-weight:700"' : ''}><td>${i + 1}</td><td>${esc(t.team)}</td><td class="r">${Math.round(t.total)}</td><td class="r">${Math.round(t.ind)}</td><td class="r">${Math.round(t.rel)}</td></tr>`).join('')}</table>`;
+  if (view === 'event') {
+    const body = UAA_EVS.map(ev => { const es = Object.values(M.S).filter(p => p.times[ev] && (!L.evTeam || p.team === L.evTeam) && M.kept.has(p.key) && (p.pick || []).includes(ev)).sort((a, b) => a.times[ev] - b.times[ev]);
+      return es.length ? `<table class="pt"><tr><th colspan="4">${esc(ev)}</th></tr>${es.map(p => { const sc = p.ind.find(x => x.ev === ev);
+        return `<tr class="${'upr-' + fin(sc.place)}"${p.team === M.EM ? ' style="font-weight:700"' : ''}><td class="r">${ord(sc.place)}</td><td class="n">${esc(p.name)} <span class="pc">${esc(p.team)}</span></td><td class="r">${secToTime(p.times[ev])}</td><td class="r">${sc.pts}</td></tr>`; }).join('')}</table>` : ''; }).join('');
+    return hdr('UAA projected results' + (L.evTeam ? ' · ' + esc(L.evTeam) : '')) + `<div class="pm">Projected entries only (each swimmer's best 3 events, each team's top ${spots}). Place · time · points.</div><div class="pcols pcols2 d3print">${body}</div>`;
+  }
+  const rows = uaaRoster(M, L.team), isEm = L.team === M.EM;
+  const trs = rows.map((p, i) => (i === spots ? `<tr><td colspan="4" style="border-top:2px dashed #000;font-size:8px;padding:2px 0">— ${spots} swimmer spots${isEm ? ` + ${uaaDivers(g)} divers` : ''} —</td></tr>` : '') +
+    `<tr${i >= spots ? ' style="color:#555"' : ''}><td class="r" style="width:20px">${i + 1}</td><td class="n" style="width:24%;font-weight:700">${esc(p.name)}</td><td class="r" style="width:40px"><b>${+p.total.toFixed(1)}</b></td>
+    <td style="white-space:normal">${p.ind.filter(x => x.pts).slice(0, p.nInd).map(x => `<span class="upchip up-${fin(x.place)}">${ord(x.place)} ${esc(x.ev)} ${x.pts}</span>`).join(' ')} ${p.rel.slice(0, p.nRel).map(x => `<span class="upchip up-${fin(x.place)}"><i>${x.letter} ${uaaShort(x.name)} ${ord(x.place)} ${+x.pts.toFixed(1)}</i></span>`).join(' ')}</td></tr>`).join('');
+  return hdr(`UAA projected roster — ${esc(L.team)}`) + `<div class="pm">${uaaRelaysOn() ? '' : '<b>Relay credit off — individual points only (best 3 events).</b> '}Points = projected UAA individual points (best 3, or 2 with 5 relays) + ¼ of relay points for relays they're on${isEm ? " (Relays tab's A and B; B relays 9th at best)" : ' (their A relays on the report)'}. Green = A final, yellow = B, orange = C.</div>
+    <table class="pt d3sw" style="font-size:9.5px">${trs}</table>`;
 }
 
 let _vr = new Set();
