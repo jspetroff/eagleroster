@@ -364,7 +364,7 @@ hr{border:none;border-top:1px solid var(--border);margin:1.25rem 0;}
       </div>
       <div class="card" style="margin-top:1rem">
         <div class="ct">Contact Info &amp; Sizes</div>
-        <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:.6rem">Drop the <b>Team Address List</b>, <b>BSN Sizes</b> and/or <b>Names and Birthdays</b> (middle names, food allergies) spreadsheets (.xlsx, Women and Men tabs). It shows only on each swimmer's card under <i>Contact &amp; sizes</i>, is kept separate from the roster, and never prints.</p>
+        <p style="font-size:.8rem;color:var(--text-dim);margin-bottom:.6rem">Drop the <b>Team Address List</b>, <b>BSN Sizes</b> and/or <b>Names and Birthdays</b> (full names, food allergies) spreadsheets (.xlsx, Women and Men tabs). It shows only on each swimmer's card under <i>Contact &amp; sizes</i>, is kept separate from the roster, and never prints.</p>
         <button class="btn bsm" onclick="document.getElementById('ctFile').click()">&#8679; Choose spreadsheets</button>
         <input type="file" id="ctFile" style="display:none" accept=".xlsx,.xls" multiple onchange="ctHandleFiles([...this.files]).finally(()=>{this.value=''})">
         <div id="ctFiles" style="font-size:.7rem;color:var(--text-dim);margin-top:.5rem;font-family:var(--fm)"></div>
@@ -3855,7 +3855,7 @@ async function appPdf(id, name) {
 // Kept in its own Firebase document (roster/contacts), NOT in the main roster: it is never saved to the device,
 // never printed, and only loaded when a card's "Contact & sizes" is opened (or the upload card is used).
 // Firebase rules limit roster/* to the two team Google accounts.
-const CT_FIELDS = [['middle', 'Middle name'], ['birthday', 'Birthday'], ['cell', 'Cell'], ['campus', 'Campus address'], ['home', 'Home address'],
+const CT_FIELDS = [['legal', 'Full name (as on license)'], ['birthday', 'Birthday'], ['cell', 'Cell'], ['campus', 'Campus address'], ['home', 'Home address'],
   ['parents', 'Parents'], ['parentPhones', 'Parent phones'], ['parentEmails', 'Parent emails'], ['allergies', 'Food allergies / diet']];
 const CT_SIZES = [['tshirt', 'T-shirt'], ['hoodie', 'Hoodie'], ['sweats', 'Sweatpants'], ['shorts', 'Shorts'], ['shoes', 'Shoes']];
 window._ct = window._ct || undefined;   // undefined = not loaded, else {people:{sid:{...}}, files:{address,sizes}}
@@ -3890,7 +3890,7 @@ async function ctRenderCard() {
     const inp = (k, l, v, wide) => `<label style="font-size:.7rem;color:var(--text-dim);display:block;margin-bottom:.4rem">${l}
       <input type="${k === 'birthday' ? 'date' : 'text'}" id="ct_${k}" value="${esc(v || '')}" style="width:100%;margin-top:.15rem"></label>`;
     box.innerHTML = head + `<div class="card" style="margin-bottom:.8rem">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 .8rem">${CT_FIELDS.map(([k, l]) => inp(k, l, P[k])).join('')}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 .8rem">${CT_FIELDS.map(([k, l]) => inp(k, l, k === 'legal' ? ctFullName(P, R.swimmers[sid]) : P[k])).join('')}</div>
       <div class="ct" style="margin-top:.4rem">Sizes</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:0 .6rem">${CT_SIZES.map(([k, l]) => inp('sz_' + k, l, Z[k])).join('')}</div>
       <div style="display:flex;gap:.5rem;margin-top:.4rem"><button class="btn bsm bprimary" onclick="ctSaveCard()">Save</button><button class="btn bsm" onclick="_ctEdit=false;ctRenderCard()">Cancel</button></div></div>`;
@@ -3901,9 +3901,9 @@ async function ctRenderCard() {
   const bday = P.birthday ? (([y, m, d]) => `${+m}/${+d}/${y}`)(P.birthday.split('-')) : '';
   const row = (l, v) => v ? `<tr><td style="color:var(--text-dim);font-size:.72rem;white-space:nowrap;vertical-align:top;padding-right:.8rem">${l}</td><td style="font-size:.82rem">${v}</td></tr>` : '';
   const sizes = CT_SIZES.filter(([k]) => Z[k]).map(([k, l]) => `${l} <b>${esc(Z[k])}</b>`).join(' · ');
-  const any = CT_FIELDS.some(([k]) => P[k]) || sizes;
+  const any = CT_FIELDS.some(([k]) => P[k]) || P.middle || sizes;
   box.innerHTML = head + `<div class="card" style="margin-bottom:.8rem">${any ? `<table style="width:100%;border-collapse:collapse"><tbody>
-      ${row('Middle name', esc(P.middle || ''))}${row('Birthday', bday)}
+      ${row('Full name', esc(ctFullName(P, R.swimmers[sid])))}${row('Birthday', bday)}
       ${row('Cell', P.cell ? `${links(P.cell, 'tel')} &nbsp;<a href="sms:${P.cell.replace(/\D/g, '')}" style="color:var(--gold);font-size:.72rem">text</a>` : '')}
       ${row('Campus', esc(P.campus || ''))}${row('Home', esc(P.home || ''))}${row('Parents', esc(P.parents || ''))}
       ${row('Parent phones', links(P.parentPhones, 'tel'))}${row('Parent emails', links(P.parentEmails, 'mail'))}
@@ -3923,6 +3923,8 @@ async function ctSaveCard() {
 // spreadsheet import (Team Address List / BSN Sizes .xlsx — Women and Men tabs)
 function ctLoadXlsx() { return loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', () => window.XLSX); }
 // middle name = what's between the first word and the roster last name ("Caitlin Anne Crysel" → "Anne"; "Jacqueline Marie St Clair" → "Marie")
+// full name for travel: the license name from the Names and Birthdays sheet, else roster first + middle + last
+const ctFullName = (P, sw) => P.legal || (sw ? [sw.first, P.middle, sw.last].filter(Boolean).join(' ') : '');
 function ctMiddle(legal, sw) {
   const t = String(legal || '').replace(/\s+/g, ' ').trim().split(' '), nt = t.map(nmNorm);
   const last = nmNorm(sw.last || '').split(' ').filter(w => !/^(jr|sr|ii|iii|iv)$/.test(w));
@@ -3997,11 +3999,11 @@ function ctRenderImport() {
   const opts = (g, sel) => '<option value="">— skip —</option>' + Object.values(R.swimmers).filter(s => s.gender === g).sort((a, b) => (a.last + a.first).localeCompare(b.last + b.first))
     .map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${esc(s.last + ', ' + s.first)}${isActive(s) ? '' : ' (archived)'}</option>`).join('');
   const odd = rows.filter(r => !r.sid || (r.how !== 'exact' && r.how !== 'alias'));
-  st.innerHTML = `<div style="font-size:.8rem;margin:.6rem 0">${rows.length} rows (${kinds.map(k => k === 'address' ? 'contact info' : k === 'names' ? 'middle names & allergies' : 'sizes').join(' + ')}) · <b>${ok} matched</b>${odd.length ? ` · check ${odd.length} below` : ''}</div>
-    ${odd.length ? `<div style="max-height:320px;overflow-y:auto;margin-bottom:.6rem">${odd.map(r => `<div class="imp-row"><span style="flex:1;font-size:.8rem">${esc(r.raw)} <span style="color:var(--text-dim);font-size:.7rem">${r.g === 'W' ? 'W' : 'M'} · ${r.kind === 'address' ? 'contacts' : r.kind === 'names' ? 'middle name & allergies' : 'sizes'}${r.sid ? ' · matched by ' + r.how : ' · no match'}</span></span>
+  st.innerHTML = `<div style="font-size:.8rem;margin:.6rem 0">${rows.length} rows (${kinds.map(k => k === 'address' ? 'contact info' : k === 'names' ? 'full names & allergies' : 'sizes').join(' + ')}) · <b>${ok} matched</b>${odd.length ? ` · check ${odd.length} below` : ''}</div>
+    ${odd.length ? `<div style="max-height:320px;overflow-y:auto;margin-bottom:.6rem">${odd.map(r => `<div class="imp-row"><span style="flex:1;font-size:.8rem">${esc(r.raw)} <span style="color:var(--text-dim);font-size:.7rem">${r.g === 'W' ? 'W' : 'M'} · ${r.kind === 'address' ? 'contacts' : r.kind === 'names' ? 'full name & allergies' : 'sizes'}${r.sid ? ' · matched by ' + r.how : ' · no match'}</span></span>
       <select onchange="_ctImp[${rows.indexOf(r)}].sid=this.value||null;ctRenderImport()" style="width:auto;max-width:200px">${opts(r.g, r.sid)}</select></div>`).join('')}</div>` : ''}
     <div style="display:flex;gap:.5rem"><button class="btn bsm bprimary" onclick="ctApplyImport()">Save to cards</button><button class="btn bsm" onclick="_ctImp=null;ctRenderImport()">Cancel</button></div>
-    <div style="font-size:.7rem;color:var(--text-dim);margin-top:.4rem">Replaces the ${kinds.map(k => k === 'address' ? 'contact' : k === 'names' ? 'middle-name' : 'size').join(', ')} fields for the matched swimmers; everything else on their cards is kept.${kinds.includes('names') ? ' From the names sheet: middle name and food allergies (not the ID numbers).' : ''}</div>`;
+    <div style="font-size:.7rem;color:var(--text-dim);margin-top:.4rem">Replaces the ${kinds.map(k => k === 'address' ? 'contact' : k === 'names' ? 'full-name' : 'size').join(', ')} fields for the matched swimmers; everything else on their cards is kept.${kinds.includes('names') ? ' From the names sheet: full name and food allergies (not the ID numbers).' : ''}</div>`;
 }
 async function ctApplyImport() {
   const rows = (_ctImp || []).filter(r => r.sid), st = document.getElementById('ctStatus');
@@ -4009,7 +4011,7 @@ async function ctApplyImport() {
     await ctSave(c => {
       rows.forEach(r => { const P = (c.people[r.sid] = c.people[r.sid] || {});
         if (r.kind === 'sizes') P.sizes = Object.assign({}, P.sizes, r.fields);
-        else if (r.kind === 'names') { P.middle = ctMiddle(r.fields.legal, R.swimmers[r.sid] || {}); if (r.fields.allergies !== undefined) P.allergies = r.fields.allergies; }
+        else if (r.kind === 'names') { P.legal = r.fields.legal; P.middle = ctMiddle(r.fields.legal, R.swimmers[r.sid] || {}); if (r.fields.allergies !== undefined) P.allergies = r.fields.allergies; }
         else Object.assign(P, r.fields); });
       [...new Set(rows.map(r => r.kind))].forEach(k => { c.files[k] = { name: rows.find(r => r.kind === k).file, date: new Date().toISOString().slice(0, 10) }; });
     });
@@ -4021,7 +4023,7 @@ async function ctApplyImport() {
 async function ctRenderUploadInfo() {
   const el = document.getElementById('ctFiles'); if (!el) return;
   try { const c = await ctLoad(); const f = c.files || {};
-    el.textContent = [f.address ? `Contacts: ${f.address.name} (${f.address.date})` : '', f.sizes ? `Sizes: ${f.sizes.name} (${f.sizes.date})` : '', f.names ? `Middle names & allergies: ${f.names.name} (${f.names.date})` : ''].filter(Boolean).join(' · ') || 'Nothing uploaded yet.';
+    el.textContent = [f.address ? `Contacts: ${f.address.name} (${f.address.date})` : '', f.sizes ? `Sizes: ${f.sizes.name} (${f.sizes.date})` : '', f.names ? `Full names & allergies: ${f.names.name} (${f.names.date})` : ''].filter(Boolean).join(' · ') || 'Nothing uploaded yet.';
   } catch (e) { el.textContent = ''; }
 }
 
